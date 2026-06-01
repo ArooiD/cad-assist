@@ -8,6 +8,22 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Windows;
 
+var jsonLogPath = GetArgValue(args, "--json-log");
+var modelPath = GetArgValue(args, "--model-path");
+var addTaskTitle = GetArgValue(args, "--add-task");
+var runSmokeTest = HasArg(args, "--smoke-test");
+
+if (string.IsNullOrWhiteSpace(modelPath))
+{
+    modelPath = @"C:\cad-assist-test\test.m3d";
+}
+
+if (!runSmokeTest)
+{
+    OpenTaskWindowOnStaThread(modelPath);
+    return 0;
+}
+
 var result = new SmokeResult
 {
     StartedAt = DateTimeOffset.Now,
@@ -15,30 +31,21 @@ var result = new SmokeResult
     UserName = Environment.UserName,
     ProcessArchitecture = RuntimeInformation.ProcessArchitecture.ToString(),
     OsDescription = RuntimeInformation.OSDescription,
-    DotNetVersion = Environment.Version.ToString()
+    DotNetVersion = Environment.Version.ToString(),
+    ModelPath = modelPath,
+    AddTaskTitle = addTaskTitle
 };
-
-var jsonLogPath = GetArgValue(args, "--json-log");
-var modelPath = GetArgValue(args, "--model-path");
-var addTaskTitle = GetArgValue(args, "--add-task");
-var showTaskWindow = HasArg(args, "--show-task-window");
-result.ModelPath = modelPath;
-result.AddTaskTitle = addTaskTitle;
 
 try
 {
     Console.WriteLine("CAD Assist KOMPAS-3D smoke test");
     Console.WriteLine($"Machine: {result.MachineName}");
     Console.WriteLine($"User: {result.UserName}");
-    Console.WriteLine($"Model path: {modelPath ?? "<not provided>"}");
+    Console.WriteLine($"Model path: {modelPath}");
     Console.WriteLine($"Task to add: {addTaskTitle ?? "<not provided>"}");
-    Console.WriteLine($"Show task window: {showTaskWindow}");
 
-    if (!string.IsNullOrWhiteSpace(modelPath))
-    {
-        result.ModelFileExists = File.Exists(modelPath);
-        Console.WriteLine($"Model file exists: {result.ModelFileExists}");
-    }
+    result.ModelFileExists = File.Exists(modelPath);
+    Console.WriteLine($"Model file exists: {result.ModelFileExists}");
 
     result.ProcessesBefore = GetInterestingProcesses();
     Console.WriteLine("CAD-like processes before: " + FormatList(result.ProcessesBefore));
@@ -63,7 +70,7 @@ try
     ReadProperty(app, "Name", result.ApplicationProperties);
 
     object? openedDocument = null;
-    if (!string.IsNullOrWhiteSpace(modelPath) && File.Exists(modelPath))
+    if (File.Exists(modelPath))
     {
         openedDocument = OpenDocument(app, modelPath, result);
     }
@@ -86,17 +93,9 @@ try
         Console.WriteLine("Active document found: " + result.ActiveDocumentType);
         ReadDocumentInfo(activeDocument, result.ActiveDocumentProperties);
 
-        if (!string.IsNullOrWhiteSpace(modelPath))
-        {
-            var contextPath = CreateProjectContext(modelPath, result);
-            result.ProjectContextPath = contextPath;
-            Console.WriteLine("CAD Assist project context written: " + contextPath);
-        }
-    }
-
-    if (showTaskWindow && !string.IsNullOrWhiteSpace(modelPath))
-    {
-        OpenTaskWindowOnStaThread(modelPath);
+        var contextPath = CreateProjectContext(modelPath, result);
+        result.ProjectContextPath = contextPath;
+        Console.WriteLine("CAD Assist project context written: " + contextPath);
     }
 }
 catch (Exception ex)
@@ -121,8 +120,6 @@ return result.Success ? 0 : 1;
 static void OpenTaskWindowOnStaThread(string modelPath)
 {
     Exception? uiException = null;
-
-    Console.WriteLine("Opening CAD Assist task window on STA thread...");
 
     var uiThread = new Thread(() =>
     {
