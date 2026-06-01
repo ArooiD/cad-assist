@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Threading;
 using System.Windows;
 using CadAssist.Kompas.Interop;
 
@@ -99,10 +100,7 @@ try
 
     if (showTaskWindow && !string.IsNullOrWhiteSpace(modelPath))
     {
-        Console.WriteLine("Opening CAD Assist task window...");
-        var wpfApp = new Application();
-        var window = new TaskListWindow(modelPath);
-        wpfApp.Run(window);
+        OpenTaskWindowOnStaThread(modelPath);
     }
 }
 catch (Exception ex)
@@ -123,6 +121,39 @@ finally
 }
 
 return result.Success ? 0 : 1;
+
+static void OpenTaskWindowOnStaThread(string modelPath)
+{
+    Exception? uiException = null;
+
+    Console.WriteLine("Opening CAD Assist task window on STA thread...");
+
+    var uiThread = new Thread(() =>
+    {
+        try
+        {
+            var wpfApp = new Application
+            {
+                ShutdownMode = ShutdownMode.OnMainWindowClose
+            };
+            var window = new TaskListWindow(modelPath);
+            wpfApp.Run(window);
+        }
+        catch (Exception ex)
+        {
+            uiException = ex;
+        }
+    });
+
+    uiThread.SetApartmentState(ApartmentState.STA);
+    uiThread.Start();
+    uiThread.Join();
+
+    if (uiException is not null)
+    {
+        throw uiException;
+    }
+}
 
 static JsonSerializerOptions JsonOptions() => new()
 {
