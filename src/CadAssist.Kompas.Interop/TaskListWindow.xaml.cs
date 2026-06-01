@@ -110,7 +110,7 @@ public partial class TaskListWindow : Window
 
             SummaryText.Text = $"Задач: {_tasks.Count}";
             StatusText.Text = File.Exists(_contextPath)
-                ? "Задачи загружены: " + DateTime.Now.ToString("HH:mm:ss")
+                ? $"Задачи загружены: {_tasks.Count}. Файл: {_contextPath}"
                 : "Файл контекста будет создан при добавлении задачи.";
         }
         catch (Exception ex)
@@ -124,21 +124,18 @@ public partial class TaskListWindow : Window
     {
         if (!File.Exists(_contextPath))
         {
-            return new ProjectContext
-            {
-                ProjectName = "CAD Assist demo project",
-                CadSystem = "KOMPAS-3D",
-                ModelPath = _modelPath,
-                DocumentName = Path.GetFileName(_modelPath),
-                DocumentDirectory = Path.GetDirectoryName(_modelPath),
-                CreatedAt = DateTimeOffset.Now,
-                UpdatedAt = DateTimeOffset.Now
-            };
+            return CreateEmptyContext();
         }
 
         var json = File.ReadAllText(_contextPath);
-        var context = JsonSerializer.Deserialize<ProjectContext>(json, JsonOptions());
-        return context ?? new ProjectContext
+        var context = JsonSerializer.Deserialize<ProjectContext>(json, JsonOptions()) ?? CreateEmptyContext();
+        EnsureCollections(context);
+        return context;
+    }
+
+    private ProjectContext CreateEmptyContext()
+    {
+        return new ProjectContext
         {
             ProjectName = "CAD Assist demo project",
             CadSystem = "KOMPAS-3D",
@@ -150,8 +147,16 @@ public partial class TaskListWindow : Window
         };
     }
 
+    private static void EnsureCollections(ProjectContext context)
+    {
+        context.Tasks ??= new List<ProjectTask>();
+        context.Requirements ??= new List<ProjectRequirement>();
+        context.ActivityLog ??= new List<ActivityLogItem>();
+    }
+
     private void SaveContext(ProjectContext context)
     {
+        EnsureCollections(context);
         var directory = Path.GetDirectoryName(_contextPath);
         if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
         File.WriteAllText(_contextPath, JsonSerializer.Serialize(context, JsonOptions()));
@@ -171,7 +176,7 @@ public partial class TaskListWindow : Window
     private static JsonSerializerOptions JsonOptions() => new()
     {
         WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 }
