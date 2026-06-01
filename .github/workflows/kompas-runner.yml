@@ -10,6 +10,8 @@ jobs:
     name: Build and run on KOMPAS workstation
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 20
+    env:
+      KOMPAS_TEST_MODEL_PATH: 'C:\cad-assist-test\test.m3d'
 
     steps:
       - name: Checkout
@@ -31,7 +33,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-          dotnet run --project src/CadAssist.Kompas.Interop/CadAssist.Kompas.Interop.csproj -c Release -- --smoke-test --json-log artifacts/kompas-smoke.json *> artifacts/kompas-smoke.log
+          dotnet run --project src/CadAssist.Kompas.Interop/CadAssist.Kompas.Interop.csproj -c Release -- --smoke-test --model-path "$env:KOMPAS_TEST_MODEL_PATH" --json-log artifacts/kompas-smoke.json *> artifacts/kompas-smoke.log
           $exitCode = $LASTEXITCODE
           Get-Content artifacts/kompas-smoke.log
           if ($exitCode -ne 0) {
