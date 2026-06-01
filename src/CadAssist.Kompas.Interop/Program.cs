@@ -1,0 +1,206 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text.Json;
+
+var result = new SmokeResult
+{
+    StartedAt = DateTimeOffset.Now,
+    MachineName = Environment.MachineName,
+    UserName = Environment.UserName,
+    ProcessArchitecture = RuntimeInformation.ProcessArchitecture.ToString(),
+    OsDescription = RuntimeInformation.OSDescription,
+    DotNetVersion = Environment.Version.ToString()
+};
+
+var jsonLogPath = GetArgValue(args, "--json-log");
+
+try
+{
+    Console.OutputEncoding = System.Text.Encoding.UTF8;
+    Console.WriteLine("CAD Assist KOMPAS-3D smoke test");
+    Console.WriteLine($"Machine: {result.MachineName}");
+    Console.WriteLine($"User: {result.UserName}");
+
+    result.KompasProcesses = Process.GetProcesses()
+        .Where(p => p.ProcessName.Contains("kompas", StringComparison.OrdinalIgnoreCase) ||
+                    p.ProcessName.Contains("k3", StringComparison.OrdinalIgnoreCase))
+        .Select(p => SafeProcessName(p))
+        .Distinct()
+        .OrderBy(x => x)
+        .ToArray();
+
+    Console.WriteLine("KOMPAS-like processes: " + (result.KompasProcesses.Length == 0 ? "not found" : string.Join(", ", result.KompasProcesses)));
+
+    var progIds = new[]
+    {
+        "KOMPAS.Application.7",
+        "Kompas.Application.7",
+        "KOMPAS.Application.5",
+        "Kompas.Application.5",
+        "KOMPAS.Application",
+        "Kompas.Application"
+    };
+
+    foreach (var progId in progIds)
+    {
+        Console.WriteLine($"Trying COM ProgID: {progId}");
+        result.TriedProgIds.Add(progId);
+
+        var type = Type.GetTypeFromProgID(progId);
+        if (type is null)
+        {
+            Console.WriteLine("  not registered");
+            continue;
+        }
+
+        result.RegisteredProgIds.Add(progId);
+        Console.WriteLine("  registered");
+
+        object? app = null;
+        try
+        {
+            app = Marshal.GetActiveObject(progId);
+            result.ConnectedProgId = progId;
+            result.ConnectedToRunningInstance = true;
+            Console.WriteLine("  connected to running instance");
+        }
+        catch (Exception activeEx)
+        {
+            result.ActiveObjectErrors[progId] = activeEx.Message;
+            Console.WriteLine("  running instance not available: " + activeEx.Message);
+
+            try
+            {
+                app = Activator.CreateInstance(type);
+                result.ConnectedProgId = progId;
+                result.CreatedNewInstance = true;
+                Console.WriteLine("  created new COM instance");
+            }
+            catch (Exception createEx)
+            {
+                result.CreateObjectErrors[progId] = createEx.Message;
+                Console.WriteLine("  create failed: " + createEx.Message);
+                continue;
+            }
+        }
+
+        if (app is null)
+        {
+            continue;
+        }
+
+        result.Success = true;
+        result.ApplicationType = app.GetType().FullName;
+        TryReadProperty(app, "Visible", result.ApplicationProperties);
+        TryReadProperty(app, "Caption", result.ApplicationProperties);
+        TryReadProperty(app, "Version", result.ApplicationProperties);
+        TryReadProperty(app, "Name", result.ApplicationProperties);
+
+        var activeDocument = TryGetProperty(app, "ActiveDocument")
+                             ?? TryCallMethod(app, "ActiveDocument");
+
+        if (activeDocument is null)
+        {
+            Console.WriteLine("Active document: not found. Open a detail/assembly/drawing in KOMPAS and rerun.");
+            result.ActiveDocumentFound = false;
+        }
+        else
+        {
+            result.ActiveDocumentFound = true;
+            result.ActiveDocumentType = activeDocument.GetType().FullName;
+            TryReadProperty(activeDocument, "Name", result.ActiveDocumentProperties);
+            TryReadProperty(activeDocument, "FileName", result.ActiveDocumentProperties);
+            TryReadProperty(activeDocument, "Path", result.ActiveDocumentProperties);
+            TryReadProperty(activeDocument, "DocumentType", result.ActiveDocumentProperties);
+            TryReadProperty(activeDocument, "Type", result.ActiveDocumentProperties);
+            Console.WriteLine("Active document found: " + result.ActiveDocumentType);
+        }
+
+        break;
+    }
+}
+catch (Exception ex)
+{
+    result.Success = false;
+    result.FatalError = ex.ToString();
+    Console.WriteLine(ex);
+}
+finally
+{
+    result.FinishedAt = DateTimeOffset.Now;
+    if (!string.IsNullOrWhiteSpace(jsonLogPath))
+    {
+        var directory = Path.GetDirectoryName(jsonLogPath);
+        if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
+        File.WriteAllText(jsonLogPath, JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
+    }
+}
+
+return result.Success ? 0 : 1;
+
+static string? GetArgValue(string[] args, string name)
+{
+    for (var i = 0; i < args.Length - 1; i++)
+    {
+        if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase)) return args[i + 1];
+    }
+    return null;
+}
+
+static string SafeProcessName(Process process)
+{
+    try { return process.ProcessName; }
+    catch { return "<unknown>"; }
+}
+
+static object? TryGetProperty(object target, string propertyName)
+{
+    try { return target.GetType().InvokeMember(propertyName, System.Reflection.BindingFlags.GetProperty, null, target, null); }
+    catch { return null; }
+}
+
+static object? TryCallMethod(object target, string methodName)
+{
+    try { return target.GetType().InvokeMember(methodName, System.Reflection.BindingFlags.InvokeMethod, null, target, null); }
+    catch { return null; }
+}
+
+static void TryReadProperty(object target, string propertyName, Dictionary<string, string?> output)
+{
+    try
+    {
+        var value = TryGetProperty(target, propertyName);
+        output[propertyName] = value?.ToString();
+        Console.WriteLine($"  {propertyName}: {output[propertyName] ?? "<null>"}");
+    }
+    catch (Exception ex)
+    {
+        output[propertyName] = "ERROR: " + ex.Message;
+    }
+}
+
+sealed class SmokeResult
+{
+    public bool Success { get; set; }
+    public DateTimeOffset StartedAt { get; set; }
+    public DateTimeOffset FinishedAt { get; set; }
+    public string? MachineName { get; set; }
+    public string? UserName { get; set; }
+    public string? ProcessArchitecture { get; set; }
+    public string? OsDescription { get; set; }
+    public string? DotNetVersion { get; set; }
+    public string[] KompasProcesses { get; set; } = Array.Empty<string>();
+    public List<string> TriedProgIds { get; } = new();
+    public List<string> RegisteredProgIds { get; } = new();
+    public string? ConnectedProgId { get; set; }
+    public bool ConnectedToRunningInstance { get; set; }
+    public bool CreatedNewInstance { get; set; }
+    public string? ApplicationType { get; set; }
+    public Dictionary<string, string?> ApplicationProperties { get; } = new();
+    public bool ActiveDocumentFound { get; set; }
+    public string? ActiveDocumentType { get; set; }
+    public Dictionary<string, string?> ActiveDocumentProperties { get; } = new();
+    public Dictionary<string, string> ActiveObjectErrors { get; } = new();
+    public Dictionary<string, string> CreateObjectErrors { get; } = new();
+    public string? FatalError { get; set; }
+}
