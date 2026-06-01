@@ -50,7 +50,7 @@ try {
                 ForEach-Object { Write-Log "  File: $($_.FullName)" }
         }
         catch {
-            Write-Log "  Scan error for $root: $($_.Exception.Message)"
+            Write-Log "  Scan error for ${root}: $($_.Exception.Message)"
         }
     }
 
@@ -70,7 +70,7 @@ try {
                 ForEach-Object { Write-Log "  Registry: $($_.Name)" }
         }
         catch {
-            Write-Log "  Registry scan error for $registryRoot: $($_.Exception.Message)"
+            Write-Log "  Registry scan error for ${registryRoot}: $($_.Exception.Message)"
         }
     }
 
