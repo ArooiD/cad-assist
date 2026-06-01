@@ -213,8 +213,83 @@ static string CreateProjectContext(string modelPath, SmokeResult result)
 {
     var contextPath = modelPath + ".cadassist.json";
     var now = DateTimeOffset.Now;
+    var options = new JsonSerializerOptions { WriteIndented = true };
+    var context = LoadOrCreateProjectContext(contextPath, modelPath, result, now, options);
 
-    var context = new ProjectContext
+    context.ModelPath = modelPath;
+    context.DocumentName = result.ActiveDocumentProperties.GetValueOrDefault("Name") ?? context.DocumentName;
+    context.DocumentDirectory = result.ActiveDocumentProperties.GetValueOrDefault("Path") ?? context.DocumentDirectory;
+    context.DocumentType = result.ActiveDocumentProperties.GetValueOrDefault("DocumentType") ?? context.DocumentType;
+    context.Type = result.ActiveDocumentProperties.GetValueOrDefault("Type") ?? context.Type;
+    context.UpdatedAt = now;
+    EnsureDefaultRequirement(context);
+
+    Console.WriteLine($"Existing task count before: {context.Tasks.Count}");
+    Console.WriteLine("Tasks before:");
+    PrintTasks(context.Tasks);
+    result.TaskCountBefore = context.Tasks.Count;
+
+    if (!string.IsNullOrWhiteSpace(result.AddTaskTitle))
+    {
+        var task = new ProjectTask
+        {
+            Id = NextTaskId(context.Tasks),
+            Title = result.AddTaskTitle,
+            Description = "Задача добавлена через CAD Assist после открытия модели через API КОМПАС-3D.",
+            Status = "Новая",
+            Assignee = Environment.UserName,
+            LinkedCadObject = context.DocumentName ?? Path.GetFileName(modelPath),
+            CreatedAt = now
+        };
+        context.Tasks.Add(task);
+        result.AddedTaskId = task.Id;
+        Console.WriteLine($"Added project task: {task.Id} | {task.Status} | {task.Title}");
+    }
+    else
+    {
+        Console.WriteLine("No task title was provided. Task list was not changed.");
+    }
+
+    context.ActivityLog.Add(new ActivityLogItem
+    {
+        At = now,
+        Actor = Environment.UserName,
+        Action = string.IsNullOrWhiteSpace(result.AddTaskTitle)
+            ? "Открыта модель через COM API КОМПАС-3D и обновлён проектный контекст CAD Assist"
+            : $"Добавлена проектная задача '{result.AddTaskTitle}' к модели через CAD Assist"
+    });
+
+    Console.WriteLine($"Task count after: {context.Tasks.Count}");
+    Console.WriteLine("Tasks after:");
+    PrintTasks(context.Tasks);
+    result.TaskCountAfter = context.Tasks.Count;
+    result.TasksAfter = context.Tasks.Select(t => $"{t.Id} | {t.Status} | {t.Title}").ToArray();
+
+    File.WriteAllText(contextPath, JsonSerializer.Serialize(context, options));
+    return contextPath;
+}
+
+static ProjectContext LoadOrCreateProjectContext(string contextPath, string modelPath, SmokeResult result, DateTimeOffset now, JsonSerializerOptions options)
+{
+    if (File.Exists(contextPath))
+    {
+        try
+        {
+            var existing = JsonSerializer.Deserialize<ProjectContext>(File.ReadAllText(contextPath), options);
+            if (existing is not null)
+            {
+                Console.WriteLine("Existing CAD Assist project context loaded: " + contextPath);
+                return existing;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Existing context could not be read, a new one will be created: " + DescribeException(ex));
+        }
+    }
+
+    Console.WriteLine("Creating new CAD Assist project context: " + contextPath);
+    return new ProjectContext
     {
         ProjectName = "CAD Assist demo project",
         CadSystem = "KOMPAS-3D",
@@ -224,42 +299,43 @@ static string CreateProjectContext(string modelPath, SmokeResult result)
         DocumentType = result.ActiveDocumentProperties.GetValueOrDefault("DocumentType"),
         Type = result.ActiveDocumentProperties.GetValueOrDefault("Type"),
         CreatedAt = now,
-        UpdatedAt = now,
-        Tasks = new List<ProjectTask>
-        {
-            new()
-            {
-                Id = "TASK-001",
-                Title = "Проверить корректность модели",
-                Description = "Автоматически созданная тестовая задача после открытия модели через API КОМПАС-3D.",
-                Status = "Новая",
-                Assignee = Environment.UserName,
-                LinkedCadObject = result.ActiveDocumentProperties.GetValueOrDefault("Name") ?? Path.GetFileName(modelPath),
-                CreatedAt = now
-            }
-        },
-        Requirements = new List<ProjectRequirement>
-        {
-            new()
-            {
-                Id = "REQ-001",
-                Title = "Модель должна быть доступна через интеграцию КОМПАС-3D",
-                Status = "Выполнено"
-            }
-        },
-        ActivityLog = new List<ActivityLogItem>
-        {
-            new()
-            {
-                At = now,
-                Actor = Environment.UserName,
-                Action = "Открыта модель через COM API КОМПАС-3D и создан проектный контекст CAD Assist"
-            }
-        }
+        UpdatedAt = now
     };
+}
 
-    File.WriteAllText(contextPath, JsonSerializer.Serialize(context, new JsonSerializerOptions { WriteIndented = true }));
-    return contextPath;
+static void EnsureDefaultRequirement(ProjectContext context)
+{
+    if (context.Requirements.Any(r => r.Id == "REQ-001")) return;
+    context.Requirements.Add(new ProjectRequirement
+    {
+        Id = "REQ-001",
+        Title = "Модель должна быть доступна через интеграцию КОМПАС-3D",
+        Status = "Выполнено"
+    });
+}
+
+static string NextTaskId(List<ProjectTask> tasks)
+{
+    var max = tasks
+        .Select(task => task.Id)
+        .Select(id => id.StartsWith("TASK-", StringComparison.OrdinalIgnoreCase) && int.TryParse(id[5..], out var n) ? n : 0)
+        .DefaultIfEmpty(0)
+        .Max();
+    return $"TASK-{max + 1:000}";
+}
+
+static void PrintTasks(List<ProjectTask> tasks)
+{
+    if (tasks.Count == 0)
+    {
+        Console.WriteLine("  <no tasks>");
+        return;
+    }
+
+    foreach (var task in tasks)
+    {
+        Console.WriteLine($"  {task.Id} | {task.Status} | {task.Title}");
+    }
 }
 
 static string? GetArgValue(string[] args, string name)
@@ -431,6 +507,10 @@ sealed class SmokeResult
     public string? ActiveDocumentType { get; set; }
     public string? OpenResult { get; set; }
     public string? ProjectContextPath { get; set; }
+    public string? AddedTaskId { get; set; }
+    public int TaskCountBefore { get; set; }
+    public int TaskCountAfter { get; set; }
+    public string[] TasksAfter { get; set; } = Array.Empty<string>();
     public Dictionary<string, string?> ActiveDocumentProperties { get; } = new();
     public Dictionary<string, string> ActiveObjectErrors { get; } = new();
     public Dictionary<string, string> CreateObjectErrors { get; } = new();
