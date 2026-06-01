@@ -92,11 +92,7 @@ public partial class TaskListWindow : Window
             return;
         }
 
-        var dialog = new CompleteTaskDialog(selectedTask)
-        {
-            Owner = this
-        };
-
+        var dialog = new CompleteTaskDialog(selectedTask) { Owner = this };
         if (dialog.ShowDialog() != true) return;
 
         try
@@ -159,10 +155,8 @@ public partial class TaskListWindow : Window
                 return;
             }
 
-            var openedNewDocument = OpenModelInKompas(fullPath);
-            StatusText.Text = openedNewDocument
-                ? $"Открыта модель в текущем экземпляре КОМПАС: {fullPath}"
-                : $"Модель уже была открыта, переключение выполнено: {fullPath}";
+            OpenModelInKompas(fullPath);
+            StatusText.Text = $"Открыта модель в текущем экземпляре КОМПАС: {fullPath}";
         }
         catch (Exception ex)
         {
@@ -210,7 +204,6 @@ public partial class TaskListWindow : Window
     private void LoadTasks()
     {
         _tasks.Clear();
-
         try
         {
             var context = LoadContextOrCreateEmpty();
@@ -219,7 +212,6 @@ public partial class TaskListWindow : Window
                 NormalizeTaskModelReference(task);
                 _tasks.Add(task);
             }
-
             SummaryText.Text = $"Задач: {_tasks.Count}";
             StatusText.Text = File.Exists(_contextPath)
                 ? $"Задачи загружены: {_tasks.Count}. Проект: {_contextPath}"
@@ -235,7 +227,6 @@ public partial class TaskListWindow : Window
     private ProjectContext LoadContextOrCreateEmpty()
     {
         if (!File.Exists(_contextPath)) return CreateEmptyContext();
-
         var json = File.ReadAllText(_contextPath);
         var context = JsonSerializer.Deserialize<ProjectContext>(json, JsonOptions()) ?? CreateEmptyContext();
         EnsureCollections(context);
@@ -263,7 +254,6 @@ public partial class TaskListWindow : Window
         EnsureCollections(context);
         context.ProjectDirectory = _projectDirectory;
         foreach (var task in context.Tasks) NormalizeTaskModelReference(task);
-
         var directory = Path.GetDirectoryName(_contextPath);
         if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
         File.WriteAllText(_contextPath, JsonSerializer.Serialize(context, JsonOptions()));
@@ -277,7 +267,6 @@ public partial class TaskListWindow : Window
                 ? task.LinkedCadObject
                 : Path.GetFileName(_modelPath);
         }
-
         if (Path.IsPathRooted(task.ModelPath)) task.ModelPath = Path.GetFileName(task.ModelPath);
         if (string.IsNullOrWhiteSpace(task.LinkedCadObject)) task.LinkedCadObject = task.ModelPath;
     }
@@ -296,138 +285,33 @@ public partial class TaskListWindow : Window
             .Select(id => id.StartsWith("TASK-", StringComparison.OrdinalIgnoreCase) && int.TryParse(id[5..], out var n) ? n : 0)
             .DefaultIfEmpty(0)
             .Max();
-
         return $"TASK-{max + 1:000}";
     }
 
-    private static bool OpenModelInKompas(string modelPath)
+    private static void OpenModelInKompas(string modelPath)
     {
         var app = GetRunningKompasApplication()
             ?? throw new InvalidOperationException("Не найден запущенный экземпляр КОМПАС. Откройте КОМПАС и проект, затем повторите попытку.");
-
         SetComProperty(app, "Visible", true);
         SetComProperty(app, "HideMessage", 1);
-
-        if (TryActivateOpenDocument(app, modelPath)) return false;
-
         var documents = GetComProperty(app, "Documents")
             ?? throw new InvalidOperationException("Не удалось получить объект Documents у текущего экземпляра КОМПАС.");
-
         documents.GetType().InvokeMember(
             "Open",
             BindingFlags.InvokeMethod,
             null,
             documents,
             new object[] { modelPath, true, false });
-
-        return true;
-    }
-
-    private static bool TryActivateOpenDocument(object app, string modelPath)
-    {
-        var targetPath = NormalizePath(modelPath);
-        var documents = GetComProperty(app, "Documents");
-        if (documents is null) return false;
-
-        foreach (var document in EnumerateComCollection(documents))
-        {
-            var documentPath = GetDocumentPath(document);
-            if (!string.Equals(NormalizePath(documentPath), targetPath, StringComparison.OrdinalIgnoreCase)) continue;
-
-            TryCallComMethod(document, "Activate");
-            TryCallComMethod(document, "SetCurrent");
-            return true;
-        }
-
-        return false;
-    }
-
-    private static IEnumerable<object> EnumerateComCollection(object collection)
-    {
-        var count = TryGetComIntProperty(collection, "Count");
-        if (count <= 0) yield break;
-
-        for (var i = 0; i < count; i++)
-        {
-            var item = TryGetCollectionItem(collection, i) ?? TryGetCollectionItem(collection, i + 1);
-            if (item is not null) yield return item;
-        }
-    }
-
-    private static object? TryGetCollectionItem(object collection, int index)
-    {
-        return TryCallComMethod(collection, "Item", index)
-            ?? TryCallComMethod(collection, "get_Item", index)
-            ?? TryCallComMethod(collection, "Document", index)
-            ?? TryCallComMethod(collection, "get_Document", index);
-    }
-
-    private static int TryGetComIntProperty(object target, string propertyName)
-    {
-        var value = GetComProperty(target, propertyName);
-        return value is not null && int.TryParse(value.ToString(), out var count) ? count : 0;
-    }
-
-    private static string? GetDocumentPath(object document)
-    {
-        var pathName = GetComProperty(document, "PathName")?.ToString();
-        if (!string.IsNullOrWhiteSpace(pathName)) return pathName;
-
-        var fileName = GetComProperty(document, "FileName")?.ToString();
-        if (!string.IsNullOrWhiteSpace(fileName)) return fileName;
-
-        var path = GetComProperty(document, "Path")?.ToString();
-        var name = GetComProperty(document, "Name")?.ToString();
-        return !string.IsNullOrWhiteSpace(path) && !string.IsNullOrWhiteSpace(name) ? Path.Combine(path, name) : null;
-    }
-
-    private static string NormalizePath(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path)) return string.Empty;
-
-        try
-        {
-            return Path.GetFullPath(path.Trim()).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        }
-        catch
-        {
-            return path.Trim();
-        }
-    }
-
-    private static object? TryCallComMethod(object target, string methodName, params object[] args)
-    {
-        try
-        {
-            return target.GetType().InvokeMember(
-                methodName,
-                BindingFlags.InvokeMethod,
-                null,
-                target,
-                args.Length == 0 ? null : args);
-        }
-        catch
-        {
-            return null;
-        }
     }
 
     private static object? GetRunningKompasApplication()
     {
-        var progIds = new[]
-        {
-            "KOMPAS.Application.7",
-            "Kompas.Application.7",
-            "KOMPAS.Application",
-            "Kompas.Application"
-        };
-
+        var progIds = new[] { "KOMPAS.Application.7", "Kompas.Application.7", "KOMPAS.Application", "Kompas.Application" };
         foreach (var progId in progIds)
         {
             try { return GetActiveComObject(progId); }
             catch { }
         }
-
         return null;
     }
 
@@ -435,29 +319,20 @@ public partial class TaskListWindow : Window
     {
         var clsid = Type.GetTypeFromProgID(progId)?.GUID
             ?? throw new InvalidOperationException($"ProgID is not registered: {progId}");
-
         var rotResult = Ole32.GetRunningObjectTable(0, out var rot);
         if (rotResult < 0) Marshal.ThrowExceptionForHR(rotResult);
-
         var bindCtxResult = Ole32.CreateBindCtx(0, out var bindCtx);
         if (bindCtxResult < 0) Marshal.ThrowExceptionForHR(bindCtxResult);
-
         rot.EnumRunning(out var enumMoniker);
         var monikers = new IMoniker[1];
-
         while (enumMoniker.Next(1, monikers, IntPtr.Zero) == 0)
         {
             monikers[0].GetDisplayName(bindCtx, null, out var displayName);
             if (!displayName.Contains(progId, StringComparison.OrdinalIgnoreCase) &&
-                !displayName.Contains(clsid.ToString("B"), StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
+                !displayName.Contains(clsid.ToString("B"), StringComparison.OrdinalIgnoreCase)) continue;
             rot.GetObject(monikers[0], out var runningObject);
             return runningObject;
         }
-
         throw new InvalidOperationException($"Running COM object not found in ROT: {progId}");
     }
 
@@ -477,16 +352,13 @@ public partial class TaskListWindow : Window
     {
         var current = ex;
         while (current is TargetInvocationException && current.InnerException is not null) current = current.InnerException;
-        return current is COMException comException
-            ? $"{comException.Message} (HRESULT: 0x{comException.HResult:X8})"
-            : current.Message;
+        return current is COMException comException ? $"{comException.Message} (HRESULT: 0x{comException.HResult:X8})" : current.Message;
     }
 
     internal static class Ole32
     {
         [DllImport("ole32.dll")]
         public static extern int GetRunningObjectTable(int reserved, out IRunningObjectTable runningObjectTable);
-
         [DllImport("ole32.dll")]
         public static extern int CreateBindCtx(int reserved, out IBindCtx bindCtx);
     }
