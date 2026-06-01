@@ -27,6 +27,9 @@ public sealed class ProjectTask
     public string LinkedCadObject { get; set; } = "";
     public string? ModelPath { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? CompletedAt { get; set; }
+    public string? CompletedBy { get; set; }
+    public string? CompletionComment { get; set; }
 }
 
 public sealed class ProjectRequirement
