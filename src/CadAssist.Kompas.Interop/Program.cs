@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Text.Json;
+using System.Windows;
 
 var result = new SmokeResult
 {
@@ -17,6 +18,7 @@ var result = new SmokeResult
 var jsonLogPath = GetArgValue(args, "--json-log");
 var modelPath = GetArgValue(args, "--model-path");
 var addTaskTitle = GetArgValue(args, "--add-task");
+var showTaskWindow = HasArg(args, "--show-task-window");
 result.ModelPath = modelPath;
 result.AddTaskTitle = addTaskTitle;
 
@@ -28,6 +30,7 @@ try
     Console.WriteLine($"User: {result.UserName}");
     Console.WriteLine($"Model path: {modelPath ?? "<not provided>"}");
     Console.WriteLine($"Task to add: {addTaskTitle ?? "<not provided>"}");
+    Console.WriteLine($"Show task window: {showTaskWindow}");
 
     if (!string.IsNullOrWhiteSpace(modelPath))
     {
@@ -87,6 +90,14 @@ try
             result.ProjectContextPath = contextPath;
             Console.WriteLine("CAD Assist project context written: " + contextPath);
         }
+    }
+
+    if (showTaskWindow && !string.IsNullOrWhiteSpace(modelPath))
+    {
+        Console.WriteLine("Opening CAD Assist task window...");
+        var wpfApp = new Application();
+        var window = new TaskListWindow(modelPath);
+        wpfApp.Run(window);
     }
 }
 catch (Exception ex)
@@ -348,6 +359,8 @@ static string? GetArgValue(string[] args, string name)
     return null;
 }
 
+static bool HasArg(string[] args, string name) => args.Any(arg => string.Equals(arg, name, StringComparison.OrdinalIgnoreCase));
+
 static string[] GetInterestingProcesses()
 {
     var keywords = new[] { "kompas", "k3", "ascon", "cad", "cadassist" };
@@ -517,7 +530,7 @@ sealed class SmokeResult
     public string? FatalError { get; set; }
 }
 
-sealed class ProjectContext
+public sealed class ProjectContext
 {
     public string ProjectName { get; set; } = "";
     public string CadSystem { get; set; } = "";
@@ -533,7 +546,7 @@ sealed class ProjectContext
     public List<ActivityLogItem> ActivityLog { get; set; } = new();
 }
 
-sealed class ProjectTask
+public sealed class ProjectTask
 {
     public string Id { get; set; } = "";
     public string Title { get; set; } = "";
@@ -544,14 +557,14 @@ sealed class ProjectTask
     public DateTimeOffset CreatedAt { get; set; }
 }
 
-sealed class ProjectRequirement
+public sealed class ProjectRequirement
 {
     public string Id { get; set; } = "";
     public string Title { get; set; } = "";
     public string Status { get; set; } = "";
 }
 
-sealed class ActivityLogItem
+public sealed class ActivityLogItem
 {
     public DateTimeOffset At { get; set; }
     public string Actor { get; set; } = "";
