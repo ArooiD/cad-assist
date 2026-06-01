@@ -6,6 +6,9 @@ param(
 $ErrorActionPreference = "Stop"
 $logDirectory = "C:\cad-assist-test"
 $logPath = Join-Path $logDirectory "cad-assist-launcher.log"
+$stdoutPath = Join-Path $logDirectory "cad-assist-task-window.stdout.log"
+$stderrPath = Join-Path $logDirectory "cad-assist-task-window.stderr.log"
+$jsonLogPath = Join-Path $logDirectory "cad-assist-task-window.json"
 
 function Write-LauncherLog {
     param([string]$Message)
@@ -17,8 +20,14 @@ function Write-LauncherLog {
 try {
     New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
     Set-Content -Path $logPath -Value "CAD Assist launcher started" -Encoding UTF8
+    Set-Content -Path $stdoutPath -Value "" -Encoding UTF8
+    Set-Content -Path $stderrPath -Value "" -Encoding UTF8
+    if (Test-Path $jsonLogPath) { Remove-Item $jsonLogPath -Force }
 
     Write-LauncherLog "ModelPath: $ModelPath"
+    Write-LauncherLog "StdoutLog: $stdoutPath"
+    Write-LauncherLog "StderrLog: $stderrPath"
+    Write-LauncherLog "JsonLog: $jsonLogPath"
 
     $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
     $repoRoot = Split-Path -Parent $scriptDir
@@ -42,8 +51,9 @@ try {
         Write-LauncherLog "Starting release executable."
         $process = Start-Process -FilePath $releaseExe -ArgumentList @(
             "--model-path", $ModelPath,
-            "--show-task-window"
-        ) -WorkingDirectory $repoRoot -PassThru
+            "--show-task-window",
+            "--json-log", $jsonLogPath
+        ) -WorkingDirectory $repoRoot -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
     }
     else {
         Write-LauncherLog "Release executable not found. Starting through dotnet run."
@@ -53,12 +63,36 @@ try {
             "-c", "Release",
             "--",
             "--model-path", $ModelPath,
-            "--show-task-window"
-        ) -WorkingDirectory $repoRoot -PassThru
+            "--show-task-window",
+            "--json-log", $jsonLogPath
+        ) -WorkingDirectory $repoRoot -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
     }
 
     Write-LauncherLog "Process started. PID: $($process.Id)"
-    Write-LauncherLog "Launcher finished. If no window is visible, check whether the process is still running and whether KOMPAS is blocked by a modal dialog."
+    Write-LauncherLog "Waiting for CAD Assist process to exit. Close the CAD Assist task window to complete the launcher."
+    $process.WaitForExit()
+    Write-LauncherLog "Process exited. ExitCode: $($process.ExitCode)"
+
+    if (Test-Path $stdoutPath) {
+        Write-LauncherLog "--- stdout begin ---"
+        Get-Content -Encoding UTF8 $stdoutPath | ForEach-Object { Write-LauncherLog $_ }
+        Write-LauncherLog "--- stdout end ---"
+    }
+
+    if (Test-Path $stderrPath) {
+        $stderrContent = Get-Content -Encoding UTF8 $stderrPath
+        if ($stderrContent.Count -gt 0) {
+            Write-LauncherLog "--- stderr begin ---"
+            $stderrContent | ForEach-Object { Write-LauncherLog $_ }
+            Write-LauncherLog "--- stderr end ---"
+        }
+    }
+
+    if ($process.ExitCode -ne 0) {
+        throw "CAD Assist process failed with exit code $($process.ExitCode). See $stdoutPath, $stderrPath and $jsonLogPath"
+    }
+
+    Write-LauncherLog "Launcher finished successfully."
 }
 catch {
     Write-LauncherLog "ERROR: $($_.Exception.Message)"
@@ -75,6 +109,8 @@ catch {
 if (-not $NoPause) {
     Write-Host ""
     Write-Host "CAD Assist launcher completed. Log file: $logPath"
-    Write-Host "If the task window did not appear, keep this console open and check the log file."
+    Write-Host "Process output: $stdoutPath"
+    Write-Host "Process errors: $stderrPath"
+    Write-Host "JSON diagnostics: $jsonLogPath"
     Read-Host "Press Enter to close"
 }
