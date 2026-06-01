@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>disable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>CadAssist.Kompas.Addin</AssemblyName>
+    <RootNamespace>CadAssist.Kompas.Addin</RootNamespace>
+  </PropertyGroup>
+</Project>
