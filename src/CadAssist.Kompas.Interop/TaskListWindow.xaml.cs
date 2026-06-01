@@ -9,6 +9,7 @@ using System.Runtime.InteropServices.ComTypes;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 
 namespace CadAssist.Kompas.Interop;
@@ -28,7 +29,7 @@ public partial class TaskListWindow : Window
         _projectDirectory = Path.GetDirectoryName(modelPath) ?? Environment.CurrentDirectory;
         _contextPath = Path.Combine(_projectDirectory, "project.cadassist.json");
         TasksGrid.ItemsSource = _tasks;
-        TasksGrid.MouseDoubleClick += TasksGrid_MouseDoubleClick;
+        TasksGrid.PreviewMouseLeftButtonUp += TasksGrid_PreviewMouseLeftButtonUp;
 
         ModelPathText.Text = "Текущая модель: " + _modelPath;
         ContextPathText.Text = "Проект: " + _contextPath;
@@ -96,10 +97,7 @@ public partial class TaskListWindow : Window
             Owner = this
         };
 
-        if (dialog.ShowDialog() != true)
-        {
-            return;
-        }
+        if (dialog.ShowDialog() != true) return;
 
         try
         {
@@ -134,10 +132,14 @@ public partial class TaskListWindow : Window
         }
     }
 
-    private void TasksGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    private void TasksGrid_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        if (TasksGrid.SelectedItem is not ProjectTask task) return;
+        if (FindParent<DataGridRow>(e.OriginalSource as DependencyObject) is null) return;
+        if (TasksGrid.SelectedItem is ProjectTask task) OpenTaskModel(task);
+    }
 
+    private void OpenTaskModel(ProjectTask task)
+    {
         try
         {
             var modelFileName = string.IsNullOrWhiteSpace(task.ModelPath) ? task.LinkedCadObject : task.ModelPath;
@@ -166,6 +168,16 @@ public partial class TaskListWindow : Window
         {
             StatusText.Text = "Ошибка открытия модели: " + DescribeException(ex);
         }
+    }
+
+    private static T? FindParent<T>(DependencyObject? child) where T : DependencyObject
+    {
+        while (child is not null)
+        {
+            if (child is T typed) return typed;
+            child = System.Windows.Media.VisualTreeHelper.GetParent(child);
+        }
+        return null;
     }
 
     private void EnsureContextExists()
