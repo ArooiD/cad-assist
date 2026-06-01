@@ -47,7 +47,7 @@ jobs:
           dotnet publish src/CadAssist.Kompas.Interop/CadAssist.Kompas.Interop.csproj -c Release -o "$env:CAD_ASSIST_APP_DIR" --no-restore
           Write-Host "CAD Assist app published to $env:CAD_ASSIST_APP_DIR"
 
-      - name: Build KOMPAS addin DLL
+      - name: Build managed KOMPAS addin DLL
         shell: powershell
         run: |
           chcp 65001 | Out-Null
@@ -57,7 +57,42 @@ jobs:
           dotnet restore src/CadAssist.Kompas.Addin/CadAssist.Kompas.Addin.csproj
           dotnet build src/CadAssist.Kompas.Addin/CadAssist.Kompas.Addin.csproj -c Release --no-restore
           Copy-Item src/CadAssist.Kompas.Addin/bin/Release/net48/CadAssist.Kompas.Addin.dll "$env:CAD_ASSIST_ADDIN_DIR\CadAssist.Kompas.Addin.dll" -Force
-          Write-Host "CAD Assist addin DLL published to $env:CAD_ASSIST_ADDIN_DIR"
+          Write-Host "CAD Assist managed addin DLL published to $env:CAD_ASSIST_ADDIN_DIR"
+
+      - name: Build native KOMPAS addin shim DLL
+        shell: powershell
+        run: |
+          chcp 65001 | Out-Null
+          [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+          $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+          New-Item -ItemType Directory -Force -Path "$env:CAD_ASSIST_ADDIN_DIR" | Out-Null
+          $msbuildCandidates = @(
+            "${env:ProgramFiles}\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
+            "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe",
+            "${env:ProgramFiles}\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe",
+            "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
+          )
+          $msbuild = $msbuildCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $msbuild) {
+            Write-Host "MSBuild.exe was not found. Install Visual Studio Build Tools 2022 with Desktop development with C++."
+            exit 1
+          }
+          Write-Host "Using MSBuild: $msbuild"
+          & $msbuild src/CadAssist.Kompas.NativeAddin/CadAssist.Kompas.NativeAddin.vcxproj /p:Configuration=Release /p:Platform=x64 /m
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Native addin build failed."
+            exit $LASTEXITCODE
+          }
+          $nativeDll = Get-ChildItem -Path src/CadAssist.Kompas.NativeAddin -Recurse -Filter CadAssist.Kompas.NativeAddin.dll -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $nativeDll) {
+            $nativeDll = Get-ChildItem -Path . -Recurse -Filter CadAssist.Kompas.NativeAddin.dll -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if (-not $nativeDll) {
+            Write-Host "Native addin DLL was not found after build."
+            exit 1
+          }
+          Copy-Item $nativeDll.FullName "$env:CAD_ASSIST_ADDIN_DIR\CadAssist.Kompas.NativeAddin.dll" -Force
+          Write-Host "CAD Assist native addin DLL published to $env:CAD_ASSIST_ADDIN_DIR"
 
       - name: Run KOMPAS integration smoke test
         shell: powershell
