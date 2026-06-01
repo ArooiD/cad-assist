@@ -21,13 +21,13 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Build KOMPAS interop project
-        shell: pwsh
+        shell: powershell
         run: |
           dotnet restore src/CadAssist.Kompas.Interop/CadAssist.Kompas.Interop.csproj
           dotnet build src/CadAssist.Kompas.Interop/CadAssist.Kompas.Interop.csproj -c Release --no-restore
 
       - name: Run KOMPAS integration smoke test
-        shell: pwsh
+        shell: powershell
         run: |
           $ErrorActionPreference = 'Continue'
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
