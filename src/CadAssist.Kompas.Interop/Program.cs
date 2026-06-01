@@ -14,6 +14,8 @@ var result = new SmokeResult
 };
 
 var jsonLogPath = GetArgValue(args, "--json-log");
+var modelPath = GetArgValue(args, "--model-path");
+result.ModelPath = modelPath;
 
 try
 {
@@ -21,6 +23,13 @@ try
     Console.WriteLine("CAD Assist KOMPAS-3D smoke test");
     Console.WriteLine($"Machine: {result.MachineName}");
     Console.WriteLine($"User: {result.UserName}");
+    Console.WriteLine($"Model path: {modelPath ?? "<not provided>"}");
+
+    if (!string.IsNullOrWhiteSpace(modelPath))
+    {
+        result.ModelFileExists = File.Exists(modelPath);
+        Console.WriteLine($"Model file exists: {result.ModelFileExists}");
+    }
 
     result.ProcessesBefore = GetInterestingProcesses();
     Console.WriteLine("CAD-like processes before: " + FormatList(result.ProcessesBefore));
@@ -95,6 +104,11 @@ try
         ReadProperty(app, "Version", result.ApplicationProperties);
         ReadProperty(app, "Name", result.ApplicationProperties);
 
+        if (!string.IsNullOrWhiteSpace(modelPath) && File.Exists(modelPath))
+        {
+            TryOpenModel(app, modelPath, result);
+        }
+
         Thread.Sleep(3000);
         result.ProcessesAfter = GetInterestingProcesses();
         Console.WriteLine("CAD-like processes after: " + FormatList(result.ProcessesAfter));
@@ -102,7 +116,7 @@ try
         var activeDocument = GetProperty(app, "ActiveDocument") ?? InvokeMethod(app, "ActiveDocument");
         if (activeDocument is null)
         {
-            Console.WriteLine("Active document: not found. Open a detail/assembly/drawing in KOMPAS and rerun.");
+            Console.WriteLine("Active document: not found after open attempts.");
             result.ActiveDocumentFound = false;
         }
         else
@@ -138,6 +152,30 @@ finally
 }
 
 return result.Success ? 0 : 1;
+
+static void TryOpenModel(object app, string modelPath, SmokeResult result)
+{
+    Console.WriteLine("Trying to open model: " + modelPath);
+
+    var documents = GetProperty(app, "Documents");
+    if (documents is not null)
+    {
+        Console.WriteLine("  Documents object found: " + documents.GetType().FullName);
+        CallMethod(documents, "Open", result.OpenAttempts, modelPath);
+        CallMethod(documents, "OpenDocument", result.OpenAttempts, modelPath);
+        CallMethod(documents, "Add", result.OpenAttempts, modelPath);
+    }
+    else
+    {
+        Console.WriteLine("  Documents object not found");
+    }
+
+    CallMethod(app, "OpenDocument", result.OpenAttempts, modelPath);
+    CallMethod(app, "DocumentOpen", result.OpenAttempts, modelPath);
+    CallMethod(app, "Open", result.OpenAttempts, modelPath);
+    CallMethod(app, "OpenDoc", result.OpenAttempts, modelPath);
+    CallMethod(app, "ksOpenDocument", result.OpenAttempts, modelPath);
+}
 
 static string? GetArgValue(string[] args, string name)
 {
@@ -206,11 +244,11 @@ static object? GetProperty(object target, string propertyName)
     }
 }
 
-static object? InvokeMethod(object target, string methodName)
+static object? InvokeMethod(object target, string methodName, params object[] args)
 {
     try
     {
-        return target.GetType().InvokeMember(methodName, System.Reflection.BindingFlags.InvokeMethod, null, target, null);
+        return target.GetType().InvokeMember(methodName, System.Reflection.BindingFlags.InvokeMethod, null, target, args.Length == 0 ? null : args);
     }
     catch
     {
@@ -233,18 +271,18 @@ static void SetProperty(object target, string propertyName, object value, Dictio
     }
 }
 
-static void CallMethod(object target, string methodName, Dictionary<string, string?> output)
+static void CallMethod(object target, string methodName, Dictionary<string, string?> output, params object[] args)
 {
     try
     {
-        var value = target.GetType().InvokeMember(methodName, System.Reflection.BindingFlags.InvokeMethod, null, target, null);
-        output[methodName] = value?.ToString() ?? "OK";
-        Console.WriteLine($"  method {methodName}: {output[methodName]}");
+        var value = target.GetType().InvokeMember(methodName, System.Reflection.BindingFlags.InvokeMethod, null, target, args.Length == 0 ? null : args);
+        output[methodName + "(" + args.Length + ")"] = value?.ToString() ?? "OK";
+        Console.WriteLine($"  method {methodName}({args.Length}): {output[methodName + "(" + args.Length + ")"]}");
     }
     catch (Exception ex)
     {
-        output[methodName] = "ERROR: " + ex.Message;
-        Console.WriteLine($"  method {methodName}: ERROR: {ex.Message}");
+        output[methodName + "(" + args.Length + ")"] = "ERROR: " + ex.Message;
+        Console.WriteLine($"  method {methodName}({args.Length}): ERROR: {ex.Message}");
     }
 }
 
@@ -290,6 +328,8 @@ sealed class SmokeResult
     public string? ProcessArchitecture { get; set; }
     public string? OsDescription { get; set; }
     public string? DotNetVersion { get; set; }
+    public string? ModelPath { get; set; }
+    public bool ModelFileExists { get; set; }
     public string[] ProcessesBefore { get; set; } = Array.Empty<string>();
     public string[] ProcessesAfter { get; set; } = Array.Empty<string>();
     public List<string> TriedProgIds { get; } = new();
@@ -301,6 +341,7 @@ sealed class SmokeResult
     public Dictionary<string, string?> ApplicationProperties { get; } = new();
     public Dictionary<string, string?> SetPropertyResults { get; } = new();
     public Dictionary<string, string?> MethodResults { get; } = new();
+    public Dictionary<string, string?> OpenAttempts { get; } = new();
     public bool ActiveDocumentFound { get; set; }
     public string? ActiveDocumentType { get; set; }
     public Dictionary<string, string?> ActiveDocumentProperties { get; } = new();
