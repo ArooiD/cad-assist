@@ -24,6 +24,7 @@ public sealed class ProjectTask
     public string Status { get; set; } = "";
     public string Assignee { get; set; } = "";
     public string LinkedCadObject { get; set; } = "";
+    public string? ModelPath { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }
 
