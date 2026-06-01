@@ -37,10 +37,7 @@ public partial class TaskListWindow : Window
         LoadTasks();
     }
 
-    private void RefreshButton_Click(object sender, RoutedEventArgs e)
-    {
-        LoadTasks();
-    }
+    private void RefreshButton_Click(object sender, RoutedEventArgs e) => LoadTasks();
 
     private void AddTaskButton_Click(object sender, RoutedEventArgs e)
     {
@@ -82,19 +79,11 @@ public partial class TaskListWindow : Window
 
     private void TasksGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (TasksGrid.SelectedItem is not ProjectTask task)
-        {
-            return;
-        }
+        if (TasksGrid.SelectedItem is not ProjectTask task) return;
 
         try
         {
-            var modelFileName = task.ModelPath;
-            if (string.IsNullOrWhiteSpace(modelFileName))
-            {
-                modelFileName = task.LinkedCadObject;
-            }
-
+            var modelFileName = string.IsNullOrWhiteSpace(task.ModelPath) ? task.LinkedCadObject : task.ModelPath;
             if (string.IsNullOrWhiteSpace(modelFileName))
             {
                 StatusText.Text = $"У задачи {task.Id} не указан файл модели.";
@@ -158,7 +147,7 @@ public partial class TaskListWindow : Window
             var context = LoadContextOrCreateEmpty();
             foreach (var task in context.Tasks.OrderBy(t => t.Id))
             {
-                NormalizeTaskModelReference(task, context);
+                NormalizeTaskModelReference(task);
                 _tasks.Add(task);
             }
 
@@ -176,18 +165,12 @@ public partial class TaskListWindow : Window
 
     private ProjectContext LoadContextOrCreateEmpty()
     {
-        if (!File.Exists(_contextPath))
-        {
-            return CreateEmptyContext();
-        }
+        if (!File.Exists(_contextPath)) return CreateEmptyContext();
 
         var json = File.ReadAllText(_contextPath);
         var context = JsonSerializer.Deserialize<ProjectContext>(json, JsonOptions()) ?? CreateEmptyContext();
         EnsureCollections(context);
-        if (string.IsNullOrWhiteSpace(context.ProjectDirectory))
-        {
-            context.ProjectDirectory = _projectDirectory;
-        }
+        if (string.IsNullOrWhiteSpace(context.ProjectDirectory)) context.ProjectDirectory = _projectDirectory;
         return context;
     }
 
@@ -210,17 +193,14 @@ public partial class TaskListWindow : Window
     {
         EnsureCollections(context);
         context.ProjectDirectory = _projectDirectory;
-        foreach (var task in context.Tasks)
-        {
-            NormalizeTaskModelReference(task, context);
-        }
+        foreach (var task in context.Tasks) NormalizeTaskModelReference(task);
 
         var directory = Path.GetDirectoryName(_contextPath);
         if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
         File.WriteAllText(_contextPath, JsonSerializer.Serialize(context, JsonOptions()));
     }
 
-    private void NormalizeTaskModelReference(ProjectTask task, ProjectContext context)
+    private void NormalizeTaskModelReference(ProjectTask task)
     {
         if (string.IsNullOrWhiteSpace(task.ModelPath))
         {
@@ -229,15 +209,8 @@ public partial class TaskListWindow : Window
                 : Path.GetFileName(_modelPath);
         }
 
-        if (Path.IsPathRooted(task.ModelPath))
-        {
-            task.ModelPath = Path.GetFileName(task.ModelPath);
-        }
-
-        if (string.IsNullOrWhiteSpace(task.LinkedCadObject))
-        {
-            task.LinkedCadObject = task.ModelPath;
-        }
+        if (Path.IsPathRooted(task.ModelPath)) task.ModelPath = Path.GetFileName(task.ModelPath);
+        if (string.IsNullOrWhiteSpace(task.LinkedCadObject)) task.LinkedCadObject = task.ModelPath;
     }
 
     private static void EnsureCollections(ProjectContext context)
@@ -266,10 +239,7 @@ public partial class TaskListWindow : Window
         SetComProperty(app, "Visible", true);
         SetComProperty(app, "HideMessage", 1);
 
-        if (TryActivateOpenDocument(app, modelPath))
-        {
-            return false;
-        }
+        if (TryActivateOpenDocument(app, modelPath)) return false;
 
         var documents = GetComProperty(app, "Documents")
             ?? throw new InvalidOperationException("Не удалось получить объект Documents у текущего экземпляра КОМПАС.");
@@ -288,22 +258,15 @@ public partial class TaskListWindow : Window
     {
         var targetPath = NormalizePath(modelPath);
         var documents = GetComProperty(app, "Documents");
-        if (documents is null)
-        {
-            return false;
-        }
+        if (documents is null) return false;
 
         foreach (var document in EnumerateComCollection(documents))
         {
             var documentPath = GetDocumentPath(document);
-            if (!string.Equals(NormalizePath(documentPath), targetPath, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
+            if (!string.Equals(NormalizePath(documentPath), targetPath, StringComparison.OrdinalIgnoreCase)) continue;
 
             TryCallComMethod(document, "Activate");
             TryCallComMethod(document, "SetCurrent");
-            TryCallComMethod(document, "Visible");
             return true;
         }
 
@@ -313,18 +276,12 @@ public partial class TaskListWindow : Window
     private static IEnumerable<object> EnumerateComCollection(object collection)
     {
         var count = TryGetComIntProperty(collection, "Count");
-        if (count <= 0)
-        {
-            yield break;
-        }
+        if (count <= 0) yield break;
 
         for (var i = 0; i < count; i++)
         {
             var item = TryGetCollectionItem(collection, i) ?? TryGetCollectionItem(collection, i + 1);
-            if (item is not null)
-            {
-                yield return item;
-            }
+            if (item is not null) yield return item;
         }
     }
 
@@ -339,8 +296,7 @@ public partial class TaskListWindow : Window
     private static int TryGetComIntProperty(object target, string propertyName)
     {
         var value = GetComProperty(target, propertyName);
-        if (value is null) return 0;
-        return int.TryParse(value.ToString(), out var count) ? count : 0;
+        return value is not null && int.TryParse(value.ToString(), out var count) ? count : 0;
     }
 
     private static string? GetDocumentPath(object document)
@@ -353,12 +309,7 @@ public partial class TaskListWindow : Window
 
         var path = GetComProperty(document, "Path")?.ToString();
         var name = GetComProperty(document, "Name")?.ToString();
-        if (!string.IsNullOrWhiteSpace(path) && !string.IsNullOrWhiteSpace(name))
-        {
-            return Path.Combine(path, name);
-        }
-
-        return null;
+        return !string.IsNullOrWhiteSpace(path) && !string.IsNullOrWhiteSpace(name) ? Path.Combine(path, name) : null;
     }
 
     private static string NormalizePath(string? path)
@@ -404,14 +355,8 @@ public partial class TaskListWindow : Window
 
         foreach (var progId in progIds)
         {
-            try
-            {
-                return GetActiveComObject(progId);
-            }
-            catch
-            {
-                // Try next ProgID.
-            }
+            try { return GetActiveComObject(progId); }
+            catch { }
         }
 
         return null;
@@ -422,8 +367,12 @@ public partial class TaskListWindow : Window
         var clsid = Type.GetTypeFromProgID(progId)?.GUID
             ?? throw new InvalidOperationException($"ProgID is not registered: {progId}");
 
-        Ole32.GetRunningObjectTable(0, out var rot).ThrowIfFailed();
-        Ole32.CreateBindCtx(0, out var bindCtx).ThrowIfFailed();
+        var rotResult = Ole32.GetRunningObjectTable(0, out var rot);
+        if (rotResult < 0) Marshal.ThrowExceptionForHR(rotResult);
+
+        var bindCtxResult = Ole32.CreateBindCtx(0, out var bindCtx);
+        if (bindCtxResult < 0) Marshal.ThrowExceptionForHR(bindCtxResult);
+
         rot.EnumRunning(out var enumMoniker);
         var monikers = new IMoniker[1];
 
@@ -445,42 +394,23 @@ public partial class TaskListWindow : Window
 
     private static object? GetComProperty(object target, string propertyName)
     {
-        try
-        {
-            return target.GetType().InvokeMember(propertyName, BindingFlags.GetProperty, null, target, null);
-        }
-        catch
-        {
-            return null;
-        }
+        try { return target.GetType().InvokeMember(propertyName, BindingFlags.GetProperty, null, target, null); }
+        catch { return null; }
     }
 
     private static void SetComProperty(object target, string propertyName, object value)
     {
-        try
-        {
-            target.GetType().InvokeMember(propertyName, BindingFlags.SetProperty, null, target, new[] { value });
-        }
-        catch
-        {
-            // Optional COM properties differ between KOMPAS versions.
-        }
+        try { target.GetType().InvokeMember(propertyName, BindingFlags.SetProperty, null, target, new[] { value }); }
+        catch { }
     }
 
     private static string DescribeException(Exception ex)
     {
         var current = ex;
-        while (current is TargetInvocationException && current.InnerException is not null)
-        {
-            current = current.InnerException;
-        }
-
-        if (current is COMException comException)
-        {
-            return $"{comException.Message} (HRESULT: 0x{comException.HResult:X8})";
-        }
-
-        return current.Message;
+        while (current is TargetInvocationException && current.InnerException is not null) current = current.InnerException;
+        return current is COMException comException
+            ? $"{comException.Message} (HRESULT: 0x{comException.HResult:X8})"
+            : current.Message;
     }
 
     internal static class Ole32
@@ -490,14 +420,6 @@ public partial class TaskListWindow : Window
 
         [DllImport("ole32.dll")]
         public static extern int CreateBindCtx(int reserved, out IBindCtx bindCtx);
-
-        public static void ThrowIfFailed(this int hresult)
-        {
-            if (hresult < 0)
-            {
-                Marshal.ThrowExceptionForHR(hresult);
-            }
-        }
     }
 
     private static JsonSerializerOptions JsonOptions() => new()
