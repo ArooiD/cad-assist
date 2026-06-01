@@ -88,17 +88,14 @@ try
             }
         }
 
-        if (app is null)
-        {
-            continue;
-        }
+        if (app is null) continue;
 
         result.Success = true;
         result.ApplicationType = app.GetType().FullName;
 
         SetProperty(app, "Visible", true, result.SetPropertyResults);
         SetProperty(app, "HideMessage", 1, result.SetPropertyResults);
-        CallMethod(app, "ActivateControllerAPI", result.MethodResults);
+        InvokeAndLog(app, "Application.ActivateControllerAPI", "ActivateControllerAPI", result.MethodResults);
 
         ReadProperty(app, "Visible", result.ApplicationProperties);
         ReadProperty(app, "Caption", result.ApplicationProperties);
@@ -177,17 +174,17 @@ static void TryOpenDocumentsObject(object documents, string modelPath, SmokeResu
     var methodNames = new[] { "Open", "OpenDocument", "Add", "OpenByFileName" };
     foreach (var methodName in methodNames)
     {
-        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath);
-        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, true);
-        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, false);
-        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, true, false);
-        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, false, false);
-        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, true, true);
-        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, false, true);
-        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, 0);
-        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, 1);
-        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, 0, true);
-        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, 1, true);
+        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath);
+        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, true);
+        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, false);
+        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, true, false);
+        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, false, false);
+        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, true, true);
+        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, false, true);
+        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, 0);
+        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, 1);
+        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, 0, true);
+        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, 1, true);
     }
 }
 
@@ -196,13 +193,13 @@ static void TryOpenApplicationObject(object app, string modelPath, SmokeResult r
     var methodNames = new[] { "OpenDocument", "DocumentOpen", "Open", "OpenDoc", "ksOpenDocument" };
     foreach (var methodName in methodNames)
     {
-        CallMethod(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath);
-        CallMethod(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, true);
-        CallMethod(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, false);
-        CallMethod(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, true, false);
-        CallMethod(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, false, false);
-        CallMethod(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, 0);
-        CallMethod(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, 1);
+        InvokeAndLog(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath);
+        InvokeAndLog(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, true);
+        InvokeAndLog(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, false);
+        InvokeAndLog(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, true, false);
+        InvokeAndLog(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, false, false);
+        InvokeAndLog(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, 0);
+        InvokeAndLog(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, 1);
     }
 }
 
@@ -300,7 +297,7 @@ static void SetProperty(object target, string propertyName, object value, Dictio
     }
 }
 
-static void CallMethod(object target, string label, string actualMethodName, Dictionary<string, string?> output, params object[] args)
+static void InvokeAndLog(object target, string label, string actualMethodName, Dictionary<string, string?> output, params object[] args)
 {
     var key = label + "(" + args.Length + "):[" + string.Join(",", args.Select(a => a?.GetType().Name ?? "null")) + "]";
     try
@@ -314,11 +311,6 @@ static void CallMethod(object target, string label, string actualMethodName, Dic
         output[key] = "ERROR: " + DescribeException(ex);
         Console.WriteLine($"  method {key}: ERROR: {DescribeException(ex)}");
     }
-}
-
-static void CallMethod(object target, string methodName, Dictionary<string, string?> output, params object[] args)
-{
-    CallMethod(target, methodName, methodName, output, args);
 }
 
 static void ReadProperty(object target, string propertyName, Dictionary<string, string?> output)
