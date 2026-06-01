@@ -1,0 +1,50 @@
+<Window x:Class="CadAssist.Kompas.Interop.TaskListWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="CAD Assist — задачи модели"
+        Height="520"
+        Width="920"
+        MinHeight="420"
+        MinWidth="760"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+            <TextBlock Text="CAD Assist — задачи проектирования" FontSize="22" FontWeight="SemiBold" />
+            <TextBlock x:Name="ModelPathText" Margin="0,6,0,0" TextWrapping="Wrap" />
+            <TextBlock x:Name="ContextPathText" Margin="0,2,0,0" TextWrapping="Wrap" Foreground="Gray" />
+        </StackPanel>
+
+        <DockPanel Grid.Row="1" Margin="0,0,0,10">
+            <Button x:Name="RefreshButton" Content="Обновить" Width="110" Height="30" Margin="0,0,8,0" Click="RefreshButton_Click" />
+            <Button x:Name="AddTaskButton" Content="Добавить тестовую задачу" Width="190" Height="30" Click="AddTaskButton_Click" />
+            <TextBlock x:Name="SummaryText" DockPanel.Dock="Right" VerticalAlignment="Center" HorizontalAlignment="Right" />
+        </DockPanel>
+
+        <DataGrid Grid.Row="2"
+                  x:Name="TasksGrid"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  CanUserAddRows="False"
+                  CanUserDeleteRows="False"
+                  SelectionMode="Single"
+                  GridLinesVisibility="Horizontal">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="90" />
+                <DataGridTextColumn Header="Статус" Binding="{Binding Status}" Width="120" />
+                <DataGridTextColumn Header="Задача" Binding="{Binding Title}" Width="*" />
+                <DataGridTextColumn Header="Исполнитель" Binding="{Binding Assignee}" Width="140" />
+                <DataGridTextColumn Header="Объект CAD" Binding="{Binding LinkedCadObject}" Width="160" />
+                <DataGridTextColumn Header="Создана" Binding="{Binding CreatedAt}" Width="180" />
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <TextBlock Grid.Row="3" x:Name="StatusText" Margin="0,10,0,0" TextWrapping="Wrap" Foreground="Gray" />
+    </Grid>
+</Window>
