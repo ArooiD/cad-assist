@@ -11,6 +11,10 @@ namespace CadAssist.Kompas.Addin
     [ClassInterface(ClassInterfaceType.AutoDual)]
     public class CadAssistAddin
     {
+        private const string AppExe = @"C:\cad-assist-test\app\CadAssist.Kompas.Interop.exe";
+        private const string DefaultModelPath = @"C:\cad-assist-test\test.m3d";
+        private const string LogPath = @"C:\cad-assist-test\cad-assist-kompas-addin.log";
+
         public string GetLibraryName()
         {
             return "CAD Assist";
@@ -23,24 +27,49 @@ namespace CadAssist.Kompas.Addin
 
         public void ExternalRunCommand(short command, short mode, object kompas)
         {
-            ShowTasks();
+            LaunchTaskWindow();
         }
 
-        public void ShowTasks()
+        public void LaunchTaskWindow()
         {
-            var appExe = @"C:\cad-assist-test\app\CadAssist.Kompas.Interop.exe";
-
-            if (!File.Exists(appExe))
+            try
             {
-                throw new FileNotFoundException("CAD Assist executable was not found", appExe);
+                WriteLog("Launch requested.");
+
+                if (!File.Exists(AppExe))
+                {
+                    WriteLog("Executable not found: " + AppExe);
+                    return;
+                }
+
+                var args = "--model-path \"" + DefaultModelPath + "\" --show-task-window";
+                WriteLog("Starting: " + AppExe + " " + args);
+
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = AppExe,
+                    Arguments = args,
+                    WorkingDirectory = Path.GetDirectoryName(AppExe),
+                    UseShellExecute = true
+                });
             }
-
-            Process.Start(new ProcessStartInfo
+            catch (Exception ex)
             {
-                FileName = appExe,
-                Arguments = "--model-path C:\\cad-assist-test\\test.m3d --show-task-window",
-                UseShellExecute = true
-            });
+                WriteLog("ERROR: " + ex);
+            }
+        }
+
+        private static void WriteLog(string message)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(LogPath));
+                File.AppendAllText(LogPath, "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] " + message + Environment.NewLine);
+            }
+            catch
+            {
+                // KOMPAS library should never fail because of diagnostic logging.
+            }
         }
 
         [ComRegisterFunction]
@@ -56,7 +85,7 @@ namespace CadAssist.Kompas.Addin
                     throw new InvalidOperationException("Could not create CLSID registry key: " + clsidKeyPath);
                 }
 
-                clsidKey.SetValue(null, "CAD Assist KOMPAS Library");
+                clsidKey.SetValue(null, "CAD Assist KOMPAS Launcher");
                 clsidKey.CreateSubKey("Kompas_Library");
 
                 using (var inproc = clsidKey.CreateSubKey("InprocServer32"))
