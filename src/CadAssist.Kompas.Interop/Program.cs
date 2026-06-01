@@ -16,7 +16,9 @@ var result = new SmokeResult
 
 var jsonLogPath = GetArgValue(args, "--json-log");
 var modelPath = GetArgValue(args, "--model-path");
+var addTaskTitle = GetArgValue(args, "--add-task");
 result.ModelPath = modelPath;
+result.AddTaskTitle = addTaskTitle;
 
 try
 {
@@ -25,6 +27,7 @@ try
     Console.WriteLine($"Machine: {result.MachineName}");
     Console.WriteLine($"User: {result.UserName}");
     Console.WriteLine($"Model path: {modelPath ?? "<not provided>"}");
+    Console.WriteLine($"Task to add: {addTaskTitle ?? "<not provided>"}");
 
     if (!string.IsNullOrWhiteSpace(modelPath))
     {
@@ -412,6 +415,7 @@ sealed class SmokeResult
     public string? OsDescription { get; set; }
     public string? DotNetVersion { get; set; }
     public string? ModelPath { get; set; }
+    public string? AddTaskTitle { get; set; }
     public bool ModelFileExists { get; set; }
     public string[] ProcessesBefore { get; set; } = Array.Empty<string>();
     public string[] ProcessesAfter { get; set; } = Array.Empty<string>();
