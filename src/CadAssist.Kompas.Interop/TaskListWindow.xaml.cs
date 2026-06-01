@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Windows;
 
@@ -25,6 +26,7 @@ public partial class TaskListWindow : Window
         ModelPathText.Text = "Модель: " + _modelPath;
         ContextPathText.Text = "Контекст: " + _contextPath;
 
+        EnsureContextExists();
         LoadTasks();
     }
 
@@ -69,16 +71,34 @@ public partial class TaskListWindow : Window
         }
     }
 
+    private void EnsureContextExists()
+    {
+        if (File.Exists(_contextPath)) return;
+
+        var context = LoadContextOrCreateEmpty();
+        var now = DateTimeOffset.Now;
+        context.Tasks.Add(new ProjectTask
+        {
+            Id = "TASK-001",
+            Title = "Проверить корректность модели",
+            Description = "Стартовая задача, созданная автоматически при первом запуске окна CAD Assist.",
+            Status = "Новая",
+            Assignee = Environment.UserName,
+            LinkedCadObject = Path.GetFileName(_modelPath),
+            CreatedAt = now
+        });
+        context.ActivityLog.Add(new ActivityLogItem
+        {
+            At = now,
+            Actor = Environment.UserName,
+            Action = "Создан стартовый контекст CAD Assist"
+        });
+        SaveContext(context);
+    }
+
     private void LoadTasks()
     {
         _tasks.Clear();
-
-        if (!File.Exists(_contextPath))
-        {
-            SummaryText.Text = "Задач: 0";
-            StatusText.Text = "Файл контекста не найден: " + _contextPath;
-            return;
-        }
 
         try
         {
@@ -89,7 +109,9 @@ public partial class TaskListWindow : Window
             }
 
             SummaryText.Text = $"Задач: {_tasks.Count}";
-            StatusText.Text = "Задачи загружены: " + DateTime.Now.ToString("HH:mm:ss");
+            StatusText.Text = File.Exists(_contextPath)
+                ? "Задачи загружены: " + DateTime.Now.ToString("HH:mm:ss")
+                : "Файл контекста будет создан при добавлении задачи.";
         }
         catch (Exception ex)
         {
@@ -114,7 +136,8 @@ public partial class TaskListWindow : Window
             };
         }
 
-        var context = JsonSerializer.Deserialize<ProjectContext>(File.ReadAllText(_contextPath), JsonOptions());
+        var json = File.ReadAllText(_contextPath);
+        var context = JsonSerializer.Deserialize<ProjectContext>(json, JsonOptions());
         return context ?? new ProjectContext
         {
             ProjectName = "CAD Assist demo project",
@@ -129,6 +152,8 @@ public partial class TaskListWindow : Window
 
     private void SaveContext(ProjectContext context)
     {
+        var directory = Path.GetDirectoryName(_contextPath);
+        if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
         File.WriteAllText(_contextPath, JsonSerializer.Serialize(context, JsonOptions()));
     }
 
@@ -146,6 +171,7 @@ public partial class TaskListWindow : Window
     private static JsonSerializerOptions JsonOptions() => new()
     {
         WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 }
