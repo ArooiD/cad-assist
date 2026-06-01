@@ -4,6 +4,15 @@ on:
   push:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      show_task_window:
+        description: 'Open CAD Assist WPF task window on the runner desktop'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 jobs:
   kompas-smoke:
@@ -34,7 +43,15 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-          dotnet run --project src/CadAssist.Kompas.Interop/CadAssist.Kompas.Interop.csproj -c Release -- --smoke-test --model-path "$env:KOMPAS_TEST_MODEL_PATH" --add-task "$env:CAD_ASSIST_TEST_TASK" --json-log artifacts/kompas-smoke.json *> artifacts/kompas-smoke.log
+          $showTaskWindow = '${{ github.event.inputs.show_task_window }}'
+          $taskWindowArg = ''
+          if ($showTaskWindow -eq 'true') {
+            $taskWindowArg = '--show-task-window'
+            Write-Host 'CAD Assist WPF task window mode is enabled.'
+          } else {
+            Write-Host 'CAD Assist WPF task window mode is disabled.'
+          }
+          dotnet run --project src/CadAssist.Kompas.Interop/CadAssist.Kompas.Interop.csproj -c Release -- --smoke-test --model-path "$env:KOMPAS_TEST_MODEL_PATH" --add-task "$env:CAD_ASSIST_TEST_TASK" $taskWindowArg --json-log artifacts/kompas-smoke.json *> artifacts/kompas-smoke.log
           $exitCode = $LASTEXITCODE
           Get-Content artifacts/kompas-smoke.log
           if ($exitCode -ne 0) {
