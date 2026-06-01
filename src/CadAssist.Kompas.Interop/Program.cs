@@ -22,15 +22,8 @@ try
     Console.WriteLine($"Machine: {result.MachineName}");
     Console.WriteLine($"User: {result.UserName}");
 
-    result.KompasProcesses = Process.GetProcesses()
-        .Where(p => p.ProcessName.Contains("kompas", StringComparison.OrdinalIgnoreCase) ||
-                    p.ProcessName.Contains("k3", StringComparison.OrdinalIgnoreCase))
-        .Select(p => SafeProcessName(p))
-        .Distinct()
-        .OrderBy(x => x)
-        .ToArray();
-
-    Console.WriteLine("KOMPAS-like processes: " + (result.KompasProcesses.Length == 0 ? "not found" : string.Join(", ", result.KompasProcesses)));
+    result.KompasProcessesBefore = GetInterestingProcesses();
+    Console.WriteLine("KOMPAS/CAD-like processes before: " + FormatList(result.KompasProcessesBefore));
 
     var progIds = new[]
     {
@@ -92,10 +85,20 @@ try
 
         result.Success = true;
         result.ApplicationType = app.GetType().FullName;
+
+        TrySetProperty(app, "Visible", true, result.ApplicationSetResults);
+        TrySetProperty(app, "HideMessage", 1, result.ApplicationSetResults);
+        TryCallMethod(app, "ActivateControllerAPI", result.ApplicationMethodResults);
+
         TryReadProperty(app, "Visible", result.ApplicationProperties);
         TryReadProperty(app, "Caption", result.ApplicationProperties);
         TryReadProperty(app, "Version", result.ApplicationProperties);
         TryReadProperty(app, "Name", result.ApplicationProperties);
+        TryReadProperty(app, "Application", result.ApplicationProperties);
+
+        Thread.Sleep(3000);
+        result.KompasProcessesAfter = GetInterestingProcesses();
+        Console.WriteLine("KOMPAS/CAD-like processes after: " + FormatList(result.KompasProcessesAfter));
 
         var activeDocument = TryGetProperty(app, "ActiveDocument")
                              ?? TryCallMethod(app, "ActiveDocument");
@@ -148,6 +151,19 @@ static string? GetArgValue(string[] args, string name)
     return null;
 }
 
+static string[] GetInterestingProcesses()
+{
+    var keywords = new[] { "kompas", "k3", "ascon", "cad", "cadassist" };
+    return Process.GetProcesses()
+        .Select(SafeProcessName)
+        .Where(name => keywords.Any(k => name.Contains(k, StringComparison.OrdinalIgnoreCase)))
+        .Distinct()
+        .OrderBy(x => x)
+        .ToArray();
+}
+
+static string FormatList(string[] items) => items.Length == 0 ? "not found" : string.Join(", ", items);
+
 static string SafeProcessName(Process process)
 {
     try { return process.ProcessName; }
@@ -190,6 +206,36 @@ static object? TryCallMethod(object target, string methodName)
     catch { return null; }
 }
 
+static void TryCallMethod(object target, string methodName, Dictionary<string, string?> output)
+{
+    try
+    {
+        var value = target.GetType().InvokeMember(methodName, System.Reflection.BindingFlags.InvokeMethod, null, target, null);
+        output[methodName] = value?.ToString() ?? "OK";
+        Console.WriteLine($"  method {methodName}: {output[methodName]}");
+    }
+    catch (Exception ex)
+    {
+        output[methodName] = "ERROR: " + ex.Message;
+        Console.WriteLine($"  method {methodName}: ERROR: {ex.Message}");
+    }
+}
+
+static void TrySetProperty(object target, string propertyName, object value, Dictionary<string, string?> output)
+{
+    try
+    {
+        target.GetType().InvokeMember(propertyName, System.Reflection.BindingFlags.SetProperty, null, target, new[] { value });
+        output[propertyName] = "OK";
+        Console.WriteLine($"  set {propertyName}: OK");
+    }
+    catch (Exception ex)
+    {
+        output[propertyName] = "ERROR: " + ex.Message;
+        Console.WriteLine($"  set {propertyName}: ERROR: {ex.Message}");
+    }
+}
+
 static void TryReadProperty(object target, string propertyName, Dictionary<string, string?> output)
 {
     try
@@ -228,7 +274,8 @@ sealed class SmokeResult
     public string? ProcessArchitecture { get; set; }
     public string? OsDescription { get; set; }
     public string? DotNetVersion { get; set; }
-    public string[] KompasProcesses { get; set; } = Array.Empty<string>();
+    public string[] KompasProcessesBefore { get; set; } = Array.Empty<string>();
+    public string[] KompasProcessesAfter { get; set; } = Array.Empty<string>();
     public List<string> TriedProgIds { get; } = new();
     public List<string> RegisteredProgIds { get; } = new();
     public string? ConnectedProgId { get; set; }
@@ -236,6 +283,8 @@ sealed class SmokeResult
     public bool CreatedNewInstance { get; set; }
     public string? ApplicationType { get; set; }
     public Dictionary<string, string?> ApplicationProperties { get; } = new();
+    public Dictionary<string, string?> ApplicationSetResults { get; } = new();
+    public Dictionary<string, string?> ApplicationMethodResults { get; } = new();
     public bool ActiveDocumentFound { get; set; }
     public string? ActiveDocumentType { get; set; }
     public Dictionary<string, string?> ActiveDocumentProperties { get; } = new();
