@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Windows;
 using CadAssist.Kompas.Interop;
@@ -117,11 +118,17 @@ finally
     {
         var directory = Path.GetDirectoryName(jsonLogPath);
         if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
-        File.WriteAllText(jsonLogPath, JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(jsonLogPath, JsonSerializer.Serialize(result, JsonOptions()));
     }
 }
 
 return result.Success ? 0 : 1;
+
+static JsonSerializerOptions JsonOptions() => new()
+{
+    WriteIndented = true,
+    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+};
 
 static object? CreateOrConnectKompas(SmokeResult result)
 {
@@ -228,7 +235,7 @@ static string CreateProjectContext(string modelPath, SmokeResult result)
 {
     var contextPath = modelPath + ".cadassist.json";
     var now = DateTimeOffset.Now;
-    var options = new JsonSerializerOptions { WriteIndented = true };
+    var options = JsonOptions();
     var context = LoadOrCreateProjectContext(contextPath, modelPath, result, now, options);
 
     context.ModelPath = modelPath;
