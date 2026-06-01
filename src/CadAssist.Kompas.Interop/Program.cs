@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
 using System.Text.Json;
 
 var result = new SmokeResult
@@ -59,10 +60,10 @@ try
         object? app = null;
         try
         {
-            app = Marshal.GetActiveObject(progId);
+            app = GetActiveComObject(progId);
             result.ConnectedProgId = progId;
             result.ConnectedToRunningInstance = true;
-            Console.WriteLine("  connected to running instance");
+            Console.WriteLine("  connected to running instance via ROT");
         }
         catch (Exception activeEx)
         {
@@ -153,6 +154,30 @@ static string SafeProcessName(Process process)
     catch { return "<unknown>"; }
 }
 
+static object GetActiveComObject(string progId)
+{
+    var clsid = Type.GetTypeFromProgID(progId)?.GUID ?? throw new InvalidOperationException($"ProgID is not registered: {progId}");
+    Ole32.GetRunningObjectTable(0, out var rot).ThrowIfFailed();
+    Ole32.CreateBindCtx(0, out var bindCtx).ThrowIfFailed();
+    rot.EnumRunning(out var enumMoniker);
+    var monikers = new IMoniker[1];
+
+    while (enumMoniker.Next(1, monikers, IntPtr.Zero) == 0)
+    {
+        monikers[0].GetDisplayName(bindCtx, null, out var displayName);
+        if (!displayName.Contains(progId, StringComparison.OrdinalIgnoreCase) &&
+            !displayName.Contains(clsid.ToString("B"), StringComparison.OrdinalIgnoreCase))
+        {
+            continue;
+        }
+
+        rot.GetObject(monikers[0], out var runningObject);
+        return runningObject;
+    }
+
+    throw new InvalidOperationException($"Running COM object not found in ROT: {progId}");
+}
+
 static object? TryGetProperty(object target, string propertyName)
 {
     try { return target.GetType().InvokeMember(propertyName, System.Reflection.BindingFlags.GetProperty, null, target, null); }
@@ -176,6 +201,20 @@ static void TryReadProperty(object target, string propertyName, Dictionary<strin
     catch (Exception ex)
     {
         output[propertyName] = "ERROR: " + ex.Message;
+    }
+}
+
+internal static class Ole32
+{
+    [DllImport("ole32.dll")]
+    public static extern int GetRunningObjectTable(int reserved, out IRunningObjectTable runningObjectTable);
+
+    [DllImport("ole32.dll")]
+    public static extern int CreateBindCtx(int reserved, out IBindCtx bindCtx);
+
+    public static void ThrowIfFailed(this int hresult)
+    {
+        if (hresult < 0) Marshal.ThrowExceptionForHR(hresult);
     }
 }
 
