@@ -6,6 +6,5 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Platforms>x64</Platforms>
-    <StartupObject>Program</StartupObject>
   </PropertyGroup>
 </Project>
