@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Text.Json;
@@ -69,8 +70,8 @@ try
         }
         catch (Exception activeEx)
         {
-            result.ActiveObjectErrors[progId] = activeEx.Message;
-            Console.WriteLine("  running instance not available: " + activeEx.Message);
+            result.ActiveObjectErrors[progId] = DescribeException(activeEx);
+            Console.WriteLine("  running instance not available: " + DescribeException(activeEx));
 
             try
             {
@@ -81,8 +82,8 @@ try
             }
             catch (Exception createEx)
             {
-                result.CreateObjectErrors[progId] = createEx.Message;
-                Console.WriteLine("  create failed: " + createEx.Message);
+                result.CreateObjectErrors[progId] = DescribeException(createEx);
+                Console.WriteLine("  create failed: " + DescribeException(createEx));
                 continue;
             }
         }
@@ -137,7 +138,7 @@ try
 catch (Exception ex)
 {
     result.Success = false;
-    result.FatalError = ex.ToString();
+    result.FatalError = DescribeException(ex);
     Console.WriteLine(ex);
 }
 finally
@@ -161,20 +162,48 @@ static void TryOpenModel(object app, string modelPath, SmokeResult result)
     if (documents is not null)
     {
         Console.WriteLine("  Documents object found: " + documents.GetType().FullName);
-        CallMethod(documents, "Open", result.OpenAttempts, modelPath);
-        CallMethod(documents, "OpenDocument", result.OpenAttempts, modelPath);
-        CallMethod(documents, "Add", result.OpenAttempts, modelPath);
+        TryOpenDocumentsObject(documents, modelPath, result);
     }
     else
     {
         Console.WriteLine("  Documents object not found");
     }
 
-    CallMethod(app, "OpenDocument", result.OpenAttempts, modelPath);
-    CallMethod(app, "DocumentOpen", result.OpenAttempts, modelPath);
-    CallMethod(app, "Open", result.OpenAttempts, modelPath);
-    CallMethod(app, "OpenDoc", result.OpenAttempts, modelPath);
-    CallMethod(app, "ksOpenDocument", result.OpenAttempts, modelPath);
+    TryOpenApplicationObject(app, modelPath, result);
+}
+
+static void TryOpenDocumentsObject(object documents, string modelPath, SmokeResult result)
+{
+    var methodNames = new[] { "Open", "OpenDocument", "Add", "OpenByFileName" };
+    foreach (var methodName in methodNames)
+    {
+        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath);
+        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, true);
+        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, false);
+        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, true, false);
+        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, false, false);
+        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, true, true);
+        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, false, true);
+        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, 0);
+        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, 1);
+        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, 0, true);
+        CallMethod(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, 1, true);
+    }
+}
+
+static void TryOpenApplicationObject(object app, string modelPath, SmokeResult result)
+{
+    var methodNames = new[] { "OpenDocument", "DocumentOpen", "Open", "OpenDoc", "ksOpenDocument" };
+    foreach (var methodName in methodNames)
+    {
+        CallMethod(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath);
+        CallMethod(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, true);
+        CallMethod(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, false);
+        CallMethod(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, true, false);
+        CallMethod(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, false, false);
+        CallMethod(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, 0);
+        CallMethod(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, 1);
+    }
 }
 
 static string? GetArgValue(string[] args, string name)
@@ -236,7 +265,7 @@ static object? GetProperty(object target, string propertyName)
 {
     try
     {
-        return target.GetType().InvokeMember(propertyName, System.Reflection.BindingFlags.GetProperty, null, target, null);
+        return target.GetType().InvokeMember(propertyName, BindingFlags.GetProperty, null, target, null);
     }
     catch
     {
@@ -248,7 +277,7 @@ static object? InvokeMethod(object target, string methodName, params object[] ar
 {
     try
     {
-        return target.GetType().InvokeMember(methodName, System.Reflection.BindingFlags.InvokeMethod, null, target, args.Length == 0 ? null : args);
+        return target.GetType().InvokeMember(methodName, BindingFlags.InvokeMethod, null, target, args.Length == 0 ? null : args);
     }
     catch
     {
@@ -260,30 +289,36 @@ static void SetProperty(object target, string propertyName, object value, Dictio
 {
     try
     {
-        target.GetType().InvokeMember(propertyName, System.Reflection.BindingFlags.SetProperty, null, target, new[] { value });
+        target.GetType().InvokeMember(propertyName, BindingFlags.SetProperty, null, target, new[] { value });
         output[propertyName] = "OK";
         Console.WriteLine($"  set {propertyName}: OK");
     }
     catch (Exception ex)
     {
-        output[propertyName] = "ERROR: " + ex.Message;
-        Console.WriteLine($"  set {propertyName}: ERROR: {ex.Message}");
+        output[propertyName] = "ERROR: " + DescribeException(ex);
+        Console.WriteLine($"  set {propertyName}: ERROR: {DescribeException(ex)}");
+    }
+}
+
+static void CallMethod(object target, string label, string actualMethodName, Dictionary<string, string?> output, params object[] args)
+{
+    var key = label + "(" + args.Length + "):[" + string.Join(",", args.Select(a => a?.GetType().Name ?? "null")) + "]";
+    try
+    {
+        var value = target.GetType().InvokeMember(actualMethodName, BindingFlags.InvokeMethod, null, target, args.Length == 0 ? null : args);
+        output[key] = value?.ToString() ?? "OK";
+        Console.WriteLine($"  method {key}: {output[key]}");
+    }
+    catch (Exception ex)
+    {
+        output[key] = "ERROR: " + DescribeException(ex);
+        Console.WriteLine($"  method {key}: ERROR: {DescribeException(ex)}");
     }
 }
 
 static void CallMethod(object target, string methodName, Dictionary<string, string?> output, params object[] args)
 {
-    try
-    {
-        var value = target.GetType().InvokeMember(methodName, System.Reflection.BindingFlags.InvokeMethod, null, target, args.Length == 0 ? null : args);
-        output[methodName + "(" + args.Length + ")"] = value?.ToString() ?? "OK";
-        Console.WriteLine($"  method {methodName}({args.Length}): {output[methodName + "(" + args.Length + ")"]}");
-    }
-    catch (Exception ex)
-    {
-        output[methodName + "(" + args.Length + ")"] = "ERROR: " + ex.Message;
-        Console.WriteLine($"  method {methodName}({args.Length}): ERROR: {ex.Message}");
-    }
+    CallMethod(target, methodName, methodName, output, args);
 }
 
 static void ReadProperty(object target, string propertyName, Dictionary<string, string?> output)
@@ -296,9 +331,25 @@ static void ReadProperty(object target, string propertyName, Dictionary<string, 
     }
     catch (Exception ex)
     {
-        output[propertyName] = "ERROR: " + ex.Message;
-        Console.WriteLine($"  {propertyName}: ERROR: {ex.Message}");
+        output[propertyName] = "ERROR: " + DescribeException(ex);
+        Console.WriteLine($"  {propertyName}: ERROR: {DescribeException(ex)}");
     }
+}
+
+static string DescribeException(Exception ex)
+{
+    var current = ex;
+    while (current is TargetInvocationException && current.InnerException is not null)
+    {
+        current = current.InnerException;
+    }
+
+    if (current is COMException comException)
+    {
+        return $"{comException.Message} (HRESULT: 0x{comException.HResult:X8})";
+    }
+
+    return current.Message;
 }
 
 internal static class Ole32
