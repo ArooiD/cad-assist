@@ -29,7 +29,6 @@ result.AddTaskTitle = addTaskTitle;
 
 try
 {
-    Console.OutputEncoding = System.Text.Encoding.UTF8;
     Console.WriteLine("CAD Assist KOMPAS-3D smoke test");
     Console.WriteLine($"Machine: {result.MachineName}");
     Console.WriteLine($"User: {result.UserName}");
