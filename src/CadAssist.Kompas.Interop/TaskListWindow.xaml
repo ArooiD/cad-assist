@@ -1,11 +1,11 @@
 <Window x:Class="CadAssist.Kompas.Interop.TaskListWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="CAD Assist — задачи модели"
-        Height="520"
-        Width="920"
-        MinHeight="420"
-        MinWidth="760"
+        Title="CAD Assist — задачи проекта"
+        Height="560"
+        Width="1040"
+        MinHeight="440"
+        MinWidth="820"
         WindowStartupLocation="CenterScreen">
     <Grid Margin="16">
         <Grid.RowDefinitions>
@@ -23,7 +23,8 @@
 
         <DockPanel Grid.Row="1" Margin="0,0,0,10">
             <Button x:Name="RefreshButton" Content="Обновить" Width="110" Height="30" Margin="0,0,8,0" Click="RefreshButton_Click" />
-            <Button x:Name="AddTaskButton" Content="Добавить тестовую задачу" Width="190" Height="30" Click="AddTaskButton_Click" />
+            <Button x:Name="AddTaskButton" Content="Добавить тестовую задачу" Width="190" Height="30" Margin="0,0,8,0" Click="AddTaskButton_Click" />
+            <Button x:Name="CompleteTaskButton" Content="Завершить задачу" Width="150" Height="30" Margin="0,0,8,0" Click="CompleteTaskButton_Click" />
             <TextBlock x:Name="SummaryText" DockPanel.Dock="Right" VerticalAlignment="Center" HorizontalAlignment="Right" />
         </DockPanel>
 
@@ -39,9 +40,11 @@
                 <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="90" />
                 <DataGridTextColumn Header="Статус" Binding="{Binding Status}" Width="120" />
                 <DataGridTextColumn Header="Задача" Binding="{Binding Title}" Width="*" />
-                <DataGridTextColumn Header="Исполнитель" Binding="{Binding Assignee}" Width="140" />
-                <DataGridTextColumn Header="Объект CAD" Binding="{Binding LinkedCadObject}" Width="160" />
-                <DataGridTextColumn Header="Создана" Binding="{Binding CreatedAt}" Width="180" />
+                <DataGridTextColumn Header="Исполнитель" Binding="{Binding Assignee}" Width="130" />
+                <DataGridTextColumn Header="Файл модели" Binding="{Binding ModelPath}" Width="160" />
+                <DataGridTextColumn Header="Создана" Binding="{Binding CreatedAt}" Width="170" />
+                <DataGridTextColumn Header="Завершена" Binding="{Binding CompletedAt}" Width="170" />
+                <DataGridTextColumn Header="Комментарий" Binding="{Binding CompletionComment}" Width="220" />
             </DataGrid.Columns>
         </DataGrid>
 
