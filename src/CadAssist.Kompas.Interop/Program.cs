@@ -22,8 +22,8 @@ try
     Console.WriteLine($"Machine: {result.MachineName}");
     Console.WriteLine($"User: {result.UserName}");
 
-    result.KompasProcessesBefore = GetInterestingProcesses();
-    Console.WriteLine("KOMPAS/CAD-like processes before: " + FormatList(result.KompasProcessesBefore));
+    result.ProcessesBefore = GetInterestingProcesses();
+    Console.WriteLine("CAD-like processes before: " + FormatList(result.ProcessesBefore));
 
     var progIds = new[]
     {
@@ -86,23 +86,20 @@ try
         result.Success = true;
         result.ApplicationType = app.GetType().FullName;
 
-        TrySetProperty(app, "Visible", true, result.ApplicationSetResults);
-        TrySetProperty(app, "HideMessage", 1, result.ApplicationSetResults);
-        TryCallMethod(app, "ActivateControllerAPI", result.ApplicationMethodResults);
+        SetProperty(app, "Visible", true, result.SetPropertyResults);
+        SetProperty(app, "HideMessage", 1, result.SetPropertyResults);
+        CallMethod(app, "ActivateControllerAPI", result.MethodResults);
 
-        TryReadProperty(app, "Visible", result.ApplicationProperties);
-        TryReadProperty(app, "Caption", result.ApplicationProperties);
-        TryReadProperty(app, "Version", result.ApplicationProperties);
-        TryReadProperty(app, "Name", result.ApplicationProperties);
-        TryReadProperty(app, "Application", result.ApplicationProperties);
+        ReadProperty(app, "Visible", result.ApplicationProperties);
+        ReadProperty(app, "Caption", result.ApplicationProperties);
+        ReadProperty(app, "Version", result.ApplicationProperties);
+        ReadProperty(app, "Name", result.ApplicationProperties);
 
         Thread.Sleep(3000);
-        result.KompasProcessesAfter = GetInterestingProcesses();
-        Console.WriteLine("KOMPAS/CAD-like processes after: " + FormatList(result.KompasProcessesAfter));
+        result.ProcessesAfter = GetInterestingProcesses();
+        Console.WriteLine("CAD-like processes after: " + FormatList(result.ProcessesAfter));
 
-        var activeDocument = TryGetProperty(app, "ActiveDocument")
-                             ?? TryCallMethod(app, "ActiveDocument");
-
+        var activeDocument = GetProperty(app, "ActiveDocument") ?? InvokeMethod(app, "ActiveDocument");
         if (activeDocument is null)
         {
             Console.WriteLine("Active document: not found. Open a detail/assembly/drawing in KOMPAS and rerun.");
@@ -112,11 +109,11 @@ try
         {
             result.ActiveDocumentFound = true;
             result.ActiveDocumentType = activeDocument.GetType().FullName;
-            TryReadProperty(activeDocument, "Name", result.ActiveDocumentProperties);
-            TryReadProperty(activeDocument, "FileName", result.ActiveDocumentProperties);
-            TryReadProperty(activeDocument, "Path", result.ActiveDocumentProperties);
-            TryReadProperty(activeDocument, "DocumentType", result.ActiveDocumentProperties);
-            TryReadProperty(activeDocument, "Type", result.ActiveDocumentProperties);
+            ReadProperty(activeDocument, "Name", result.ActiveDocumentProperties);
+            ReadProperty(activeDocument, "FileName", result.ActiveDocumentProperties);
+            ReadProperty(activeDocument, "Path", result.ActiveDocumentProperties);
+            ReadProperty(activeDocument, "DocumentType", result.ActiveDocumentProperties);
+            ReadProperty(activeDocument, "Type", result.ActiveDocumentProperties);
             Console.WriteLine("Active document found: " + result.ActiveDocumentType);
         }
 
@@ -148,6 +145,7 @@ static string? GetArgValue(string[] args, string name)
     {
         if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase)) return args[i + 1];
     }
+
     return null;
 }
 
@@ -156,13 +154,11 @@ static string[] GetInterestingProcesses()
     var keywords = new[] { "kompas", "k3", "ascon", "cad", "cadassist" };
     return Process.GetProcesses()
         .Select(SafeProcessName)
-        .Where(name => keywords.Any(k => name.Contains(k, StringComparison.OrdinalIgnoreCase)))
+        .Where(name => keywords.Any(keyword => name.Contains(keyword, StringComparison.OrdinalIgnoreCase)))
         .Distinct()
-        .OrderBy(x => x)
+        .OrderBy(name => name)
         .ToArray();
 }
-
-static string FormatList(string[] items) => items.Length == 0 ? "not found" : string.Join(", ", items);
 
 static string SafeProcessName(Process process)
 {
@@ -170,9 +166,13 @@ static string SafeProcessName(Process process)
     catch { return "<unknown>"; }
 }
 
+static string FormatList(string[] items) => items.Length == 0 ? "not found" : string.Join(", ", items);
+
 static object GetActiveComObject(string progId)
 {
-    var clsid = Type.GetTypeFromProgID(progId)?.GUID ?? throw new InvalidOperationException($"ProgID is not registered: {progId}");
+    var clsid = Type.GetTypeFromProgID(progId)?.GUID
+        ?? throw new InvalidOperationException($"ProgID is not registered: {progId}");
+
     Ole32.GetRunningObjectTable(0, out var rot).ThrowIfFailed();
     Ole32.CreateBindCtx(0, out var bindCtx).ThrowIfFailed();
     rot.EnumRunning(out var enumMoniker);
@@ -194,34 +194,31 @@ static object GetActiveComObject(string progId)
     throw new InvalidOperationException($"Running COM object not found in ROT: {progId}");
 }
 
-static object? TryGetProperty(object target, string propertyName)
-{
-    try { return target.GetType().InvokeMember(propertyName, System.Reflection.BindingFlags.GetProperty, null, target, null); }
-    catch { return null; }
-}
-
-static object? TryCallMethod(object target, string methodName)
-{
-    try { return target.GetType().InvokeMember(methodName, System.Reflection.BindingFlags.InvokeMethod, null, target, null); }
-    catch { return null; }
-}
-
-static void TryCallMethod(object target, string methodName, Dictionary<string, string?> output)
+static object? GetProperty(object target, string propertyName)
 {
     try
     {
-        var value = target.GetType().InvokeMember(methodName, System.Reflection.BindingFlags.InvokeMethod, null, target, null);
-        output[methodName] = value?.ToString() ?? "OK";
-        Console.WriteLine($"  method {methodName}: {output[methodName]}");
+        return target.GetType().InvokeMember(propertyName, System.Reflection.BindingFlags.GetProperty, null, target, null);
     }
-    catch (Exception ex)
+    catch
     {
-        output[methodName] = "ERROR: " + ex.Message;
-        Console.WriteLine($"  method {methodName}: ERROR: {ex.Message}");
+        return null;
     }
 }
 
-static void TrySetProperty(object target, string propertyName, object value, Dictionary<string, string?> output)
+static object? InvokeMethod(object target, string methodName)
+{
+    try
+    {
+        return target.GetType().InvokeMember(methodName, System.Reflection.BindingFlags.InvokeMethod, null, target, null);
+    }
+    catch
+    {
+        return null;
+    }
+}
+
+static void SetProperty(object target, string propertyName, object value, Dictionary<string, string?> output)
 {
     try
     {
@@ -236,17 +233,33 @@ static void TrySetProperty(object target, string propertyName, object value, Dic
     }
 }
 
-static void TryReadProperty(object target, string propertyName, Dictionary<string, string?> output)
+static void CallMethod(object target, string methodName, Dictionary<string, string?> output)
 {
     try
     {
-        var value = TryGetProperty(target, propertyName);
+        var value = target.GetType().InvokeMember(methodName, System.Reflection.BindingFlags.InvokeMethod, null, target, null);
+        output[methodName] = value?.ToString() ?? "OK";
+        Console.WriteLine($"  method {methodName}: {output[methodName]}");
+    }
+    catch (Exception ex)
+    {
+        output[methodName] = "ERROR: " + ex.Message;
+        Console.WriteLine($"  method {methodName}: ERROR: {ex.Message}");
+    }
+}
+
+static void ReadProperty(object target, string propertyName, Dictionary<string, string?> output)
+{
+    try
+    {
+        var value = GetProperty(target, propertyName);
         output[propertyName] = value?.ToString();
         Console.WriteLine($"  {propertyName}: {output[propertyName] ?? "<null>"}");
     }
     catch (Exception ex)
     {
         output[propertyName] = "ERROR: " + ex.Message;
+        Console.WriteLine($"  {propertyName}: ERROR: {ex.Message}");
     }
 }
 
@@ -260,7 +273,10 @@ internal static class Ole32
 
     public static void ThrowIfFailed(this int hresult)
     {
-        if (hresult < 0) Marshal.ThrowExceptionForHR(hresult);
+        if (hresult < 0)
+        {
+            Marshal.ThrowExceptionForHR(hresult);
+        }
     }
 }
 
@@ -274,8 +290,8 @@ sealed class SmokeResult
     public string? ProcessArchitecture { get; set; }
     public string? OsDescription { get; set; }
     public string? DotNetVersion { get; set; }
-    public string[] KompasProcessesBefore { get; set; } = Array.Empty<string>();
-    public string[] KompasProcessesAfter { get; set; } = Array.Empty<string>();
+    public string[] ProcessesBefore { get; set; } = Array.Empty<string>();
+    public string[] ProcessesAfter { get; set; } = Array.Empty<string>();
     public List<string> TriedProgIds { get; } = new();
     public List<string> RegisteredProgIds { get; } = new();
     public string? ConnectedProgId { get; set; }
@@ -283,8 +299,8 @@ sealed class SmokeResult
     public bool CreatedNewInstance { get; set; }
     public string? ApplicationType { get; set; }
     public Dictionary<string, string?> ApplicationProperties { get; } = new();
-    public Dictionary<string, string?> ApplicationSetResults { get; } = new();
-    public Dictionary<string, string?> ApplicationMethodResults { get; } = new();
+    public Dictionary<string, string?> SetPropertyResults { get; } = new();
+    public Dictionary<string, string?> MethodResults { get; } = new();
     public bool ActiveDocumentFound { get; set; }
     public string? ActiveDocumentType { get; set; }
     public Dictionary<string, string?> ActiveDocumentProperties { get; } = new();
