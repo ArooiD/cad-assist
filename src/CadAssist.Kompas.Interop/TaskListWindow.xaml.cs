@@ -77,6 +77,63 @@ public partial class TaskListWindow : Window
         }
     }
 
+    private void CompleteTaskButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (TasksGrid.SelectedItem is not ProjectTask selectedTask)
+        {
+            StatusText.Text = "Выберите задачу для завершения.";
+            return;
+        }
+
+        if (string.Equals(selectedTask.Status, "Завершена", StringComparison.OrdinalIgnoreCase))
+        {
+            StatusText.Text = $"Задача {selectedTask.Id} уже завершена.";
+            return;
+        }
+
+        var dialog = new CompleteTaskDialog(selectedTask)
+        {
+            Owner = this
+        };
+
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        try
+        {
+            var context = LoadContextOrCreateEmpty();
+            var task = context.Tasks.FirstOrDefault(t => string.Equals(t.Id, selectedTask.Id, StringComparison.OrdinalIgnoreCase));
+            if (task is null)
+            {
+                StatusText.Text = $"Задача {selectedTask.Id} не найдена в проектном файле.";
+                return;
+            }
+
+            var now = DateTimeOffset.Now;
+            task.Status = "Завершена";
+            task.CompletedAt = now;
+            task.CompletedBy = Environment.UserName;
+            task.CompletionComment = dialog.CommentText;
+            context.UpdatedAt = now;
+            context.ActivityLog.Add(new ActivityLogItem
+            {
+                At = now,
+                Actor = Environment.UserName,
+                Action = $"Задача {task.Id} завершена. Комментарий: {dialog.CommentText}"
+            });
+
+            SaveContext(context);
+            LoadTasks();
+            StatusText.Text = $"Задача {task.Id} завершена.";
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "Ошибка завершения задачи: " + ex.Message;
+        }
+    }
+
     private void TasksGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (TasksGrid.SelectedItem is not ProjectTask task) return;
@@ -145,7 +202,7 @@ public partial class TaskListWindow : Window
         try
         {
             var context = LoadContextOrCreateEmpty();
-            foreach (var task in context.Tasks.OrderBy(t => t.Id))
+            foreach (var task in context.Tasks.OrderBy(t => t.Status == "Завершена").ThenBy(t => t.Id))
             {
                 NormalizeTaskModelReference(task);
                 _tasks.Add(task);
