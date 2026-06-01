@@ -77,6 +77,13 @@ try
         result.ActiveDocumentType = activeDocument.GetType().FullName;
         Console.WriteLine("Active document found: " + result.ActiveDocumentType);
         ReadDocumentInfo(activeDocument, result.ActiveDocumentProperties);
+
+        if (!string.IsNullOrWhiteSpace(modelPath))
+        {
+            var contextPath = CreateProjectContext(modelPath, result);
+            result.ProjectContextPath = contextPath;
+            Console.WriteLine("CAD Assist project context written: " + contextPath);
+        }
     }
 }
 catch (Exception ex)
@@ -197,6 +204,59 @@ static void ReadDocumentInfo(object document, Dictionary<string, string?> output
     ReadProperty(document, "Path", output);
     ReadProperty(document, "DocumentType", output);
     ReadProperty(document, "Type", output);
+}
+
+static string CreateProjectContext(string modelPath, SmokeResult result)
+{
+    var contextPath = modelPath + ".cadassist.json";
+    var now = DateTimeOffset.Now;
+
+    var context = new ProjectContext
+    {
+        ProjectName = "CAD Assist demo project",
+        CadSystem = "KOMPAS-3D",
+        ModelPath = modelPath,
+        DocumentName = result.ActiveDocumentProperties.GetValueOrDefault("Name"),
+        DocumentDirectory = result.ActiveDocumentProperties.GetValueOrDefault("Path"),
+        DocumentType = result.ActiveDocumentProperties.GetValueOrDefault("DocumentType"),
+        Type = result.ActiveDocumentProperties.GetValueOrDefault("Type"),
+        CreatedAt = now,
+        UpdatedAt = now,
+        Tasks = new List<ProjectTask>
+        {
+            new()
+            {
+                Id = "TASK-001",
+                Title = "Проверить корректность модели",
+                Description = "Автоматически созданная тестовая задача после открытия модели через API КОМПАС-3D.",
+                Status = "Новая",
+                Assignee = Environment.UserName,
+                LinkedCadObject = result.ActiveDocumentProperties.GetValueOrDefault("Name") ?? Path.GetFileName(modelPath),
+                CreatedAt = now
+            }
+        },
+        Requirements = new List<ProjectRequirement>
+        {
+            new()
+            {
+                Id = "REQ-001",
+                Title = "Модель должна быть доступна через интеграцию КОМПАС-3D",
+                Status = "Выполнено"
+            }
+        },
+        ActivityLog = new List<ActivityLogItem>
+        {
+            new()
+            {
+                At = now,
+                Actor = Environment.UserName,
+                Action = "Открыта модель через COM API КОМПАС-3D и создан проектный контекст CAD Assist"
+            }
+        }
+    };
+
+    File.WriteAllText(contextPath, JsonSerializer.Serialize(context, new JsonSerializerOptions { WriteIndented = true }));
+    return contextPath;
 }
 
 static string? GetArgValue(string[] args, string name)
@@ -366,8 +426,50 @@ sealed class SmokeResult
     public bool ActiveDocumentFound { get; set; }
     public string? ActiveDocumentType { get; set; }
     public string? OpenResult { get; set; }
+    public string? ProjectContextPath { get; set; }
     public Dictionary<string, string?> ActiveDocumentProperties { get; } = new();
     public Dictionary<string, string> ActiveObjectErrors { get; } = new();
     public Dictionary<string, string> CreateObjectErrors { get; } = new();
     public string? FatalError { get; set; }
+}
+
+sealed class ProjectContext
+{
+    public string ProjectName { get; set; } = "";
+    public string CadSystem { get; set; } = "";
+    public string ModelPath { get; set; } = "";
+    public string? DocumentName { get; set; }
+    public string? DocumentDirectory { get; set; }
+    public string? DocumentType { get; set; }
+    public string? Type { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public List<ProjectTask> Tasks { get; set; } = new();
+    public List<ProjectRequirement> Requirements { get; set; } = new();
+    public List<ActivityLogItem> ActivityLog { get; set; } = new();
+}
+
+sealed class ProjectTask
+{
+    public string Id { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Description { get; set; } = "";
+    public string Status { get; set; } = "";
+    public string Assignee { get; set; } = "";
+    public string LinkedCadObject { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+sealed class ProjectRequirement
+{
+    public string Id { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Status { get; set; } = "";
+}
+
+sealed class ActivityLogItem
+{
+    public DateTimeOffset At { get; set; }
+    public string Actor { get; set; } = "";
+    public string Action { get; set; } = "";
 }
