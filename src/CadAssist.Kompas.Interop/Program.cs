@@ -13,15 +13,16 @@ var modelPath = GetArgValue(args, "--model-path");
 var addTaskTitle = GetArgValue(args, "--add-task");
 var runSmokeTest = HasArg(args, "--smoke-test");
 
+if (!runSmokeTest)
+{
+    modelPath = ResolveTaskWindowModelPath(modelPath);
+    OpenTaskWindowOnStaThread(modelPath);
+    return 0;
+}
+
 if (string.IsNullOrWhiteSpace(modelPath))
 {
     modelPath = @"C:\cad-assist-test\test.m3d";
-}
-
-if (!runSmokeTest)
-{
-    OpenTaskWindowOnStaThread(modelPath);
-    return 0;
 }
 
 var result = new SmokeResult
@@ -116,6 +117,64 @@ finally
 }
 
 return result.Success ? 0 : 1;
+
+static string ResolveTaskWindowModelPath(string? explicitModelPath)
+{
+    if (!string.IsNullOrWhiteSpace(explicitModelPath))
+    {
+        return explicitModelPath;
+    }
+
+    var activePath = TryGetActiveKompasDocumentPath();
+    if (!string.IsNullOrWhiteSpace(activePath))
+    {
+        return activePath;
+    }
+
+    return @"C:\cad-assist-test\test.m3d";
+}
+
+static string? TryGetActiveKompasDocumentPath()
+{
+    try
+    {
+        var result = new SmokeResult();
+        var app = CreateOrConnectKompas(result);
+        if (app is null) return null;
+
+        var activeDocument = GetProperty(app, "ActiveDocument") ?? InvokeMethod(app, "ActiveDocument");
+        if (activeDocument is null) return null;
+
+        var fullPath = ReadStringProperty(activeDocument, "FileName");
+        if (!string.IsNullOrWhiteSpace(fullPath) && File.Exists(fullPath)) return fullPath;
+
+        var path = ReadStringProperty(activeDocument, "Path");
+        var name = ReadStringProperty(activeDocument, "Name");
+        if (!string.IsNullOrWhiteSpace(path) && !string.IsNullOrWhiteSpace(name))
+        {
+            var combined = Path.Combine(path, name);
+            if (File.Exists(combined)) return combined;
+        }
+    }
+    catch
+    {
+        return null;
+    }
+
+    return null;
+}
+
+static string? ReadStringProperty(object target, string propertyName)
+{
+    try
+    {
+        return GetProperty(target, propertyName)?.ToString();
+    }
+    catch
+    {
+        return null;
+    }
+}
 
 static void OpenTaskWindowOnStaThread(string modelPath)
 {
