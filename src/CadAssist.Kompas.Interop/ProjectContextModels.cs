@@ -5,6 +5,7 @@ public sealed class ProjectContext
     public string ProjectName { get; set; } = "";
     public string CadSystem { get; set; } = "";
     public string ModelPath { get; set; } = "";
+    public string ProjectDirectory { get; set; } = "";
     public string? DocumentName { get; set; }
     public string? DocumentDirectory { get; set; }
     public string? DocumentType { get; set; }
