@@ -35,6 +35,71 @@ try
     result.ProcessesBefore = GetInterestingProcesses();
     Console.WriteLine("CAD-like processes before: " + FormatList(result.ProcessesBefore));
 
+    var app = CreateOrConnectKompas(result);
+    if (app is null)
+    {
+        result.Success = false;
+        Console.WriteLine("KOMPAS application object was not created.");
+        return 1;
+    }
+
+    result.Success = true;
+    result.ApplicationType = app.GetType().FullName;
+
+    SetProperty(app, "Visible", true, result.SetPropertyResults);
+    SetProperty(app, "HideMessage", 1, result.SetPropertyResults);
+
+    ReadProperty(app, "Visible", result.ApplicationProperties);
+    ReadProperty(app, "Caption", result.ApplicationProperties);
+    ReadProperty(app, "Version", result.ApplicationProperties);
+    ReadProperty(app, "Name", result.ApplicationProperties);
+
+    object? openedDocument = null;
+    if (!string.IsNullOrWhiteSpace(modelPath) && File.Exists(modelPath))
+    {
+        openedDocument = OpenDocument(app, modelPath, result);
+    }
+
+    Thread.Sleep(1500);
+    result.ProcessesAfter = GetInterestingProcesses();
+    Console.WriteLine("CAD-like processes after: " + FormatList(result.ProcessesAfter));
+
+    var activeDocument = openedDocument ?? GetProperty(app, "ActiveDocument") ?? InvokeMethod(app, "ActiveDocument");
+    if (activeDocument is null)
+    {
+        Console.WriteLine("Active document: not found.");
+        result.ActiveDocumentFound = false;
+        result.Success = false;
+    }
+    else
+    {
+        result.ActiveDocumentFound = true;
+        result.ActiveDocumentType = activeDocument.GetType().FullName;
+        Console.WriteLine("Active document found: " + result.ActiveDocumentType);
+        ReadDocumentInfo(activeDocument, result.ActiveDocumentProperties);
+    }
+}
+catch (Exception ex)
+{
+    result.Success = false;
+    result.FatalError = DescribeException(ex);
+    Console.WriteLine(ex);
+}
+finally
+{
+    result.FinishedAt = DateTimeOffset.Now;
+    if (!string.IsNullOrWhiteSpace(jsonLogPath))
+    {
+        var directory = Path.GetDirectoryName(jsonLogPath);
+        if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
+        File.WriteAllText(jsonLogPath, JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
+    }
+}
+
+return result.Success ? 0 : 1;
+
+static object? CreateOrConnectKompas(SmokeResult result)
+{
     var progIds = new[]
     {
         "KOMPAS.Application.7",
@@ -60,147 +125,78 @@ try
         result.RegisteredProgIds.Add(progId);
         Console.WriteLine("  registered");
 
-        object? app = null;
         try
         {
-            app = GetActiveComObject(progId);
+            var runningApp = GetActiveComObject(progId);
             result.ConnectedProgId = progId;
             result.ConnectedToRunningInstance = true;
             Console.WriteLine("  connected to running instance via ROT");
+            return runningApp;
         }
         catch (Exception activeEx)
         {
             result.ActiveObjectErrors[progId] = DescribeException(activeEx);
             Console.WriteLine("  running instance not available: " + DescribeException(activeEx));
-
-            try
-            {
-                app = Activator.CreateInstance(type);
-                result.ConnectedProgId = progId;
-                result.CreatedNewInstance = true;
-                Console.WriteLine("  created new COM instance");
-            }
-            catch (Exception createEx)
-            {
-                result.CreateObjectErrors[progId] = DescribeException(createEx);
-                Console.WriteLine("  create failed: " + DescribeException(createEx));
-                continue;
-            }
         }
 
-        if (app is null) continue;
-
-        result.Success = true;
-        result.ApplicationType = app.GetType().FullName;
-
-        SetProperty(app, "Visible", true, result.SetPropertyResults);
-        SetProperty(app, "HideMessage", 1, result.SetPropertyResults);
-        InvokeAndLog(app, "Application.ActivateControllerAPI", "ActivateControllerAPI", result.MethodResults);
-
-        ReadProperty(app, "Visible", result.ApplicationProperties);
-        ReadProperty(app, "Caption", result.ApplicationProperties);
-        ReadProperty(app, "Version", result.ApplicationProperties);
-        ReadProperty(app, "Name", result.ApplicationProperties);
-
-        if (!string.IsNullOrWhiteSpace(modelPath) && File.Exists(modelPath))
+        try
         {
-            TryOpenModel(app, modelPath, result);
+            var createdApp = Activator.CreateInstance(type);
+            result.ConnectedProgId = progId;
+            result.CreatedNewInstance = true;
+            Console.WriteLine("  created new COM instance");
+            return createdApp;
         }
-
-        Thread.Sleep(3000);
-        result.ProcessesAfter = GetInterestingProcesses();
-        Console.WriteLine("CAD-like processes after: " + FormatList(result.ProcessesAfter));
-
-        var activeDocument = GetProperty(app, "ActiveDocument") ?? InvokeMethod(app, "ActiveDocument");
-        if (activeDocument is null)
+        catch (Exception createEx)
         {
-            Console.WriteLine("Active document: not found after open attempts.");
-            result.ActiveDocumentFound = false;
+            result.CreateObjectErrors[progId] = DescribeException(createEx);
+            Console.WriteLine("  create failed: " + DescribeException(createEx));
         }
-        else
-        {
-            result.ActiveDocumentFound = true;
-            result.ActiveDocumentType = activeDocument.GetType().FullName;
-            ReadProperty(activeDocument, "Name", result.ActiveDocumentProperties);
-            ReadProperty(activeDocument, "FileName", result.ActiveDocumentProperties);
-            ReadProperty(activeDocument, "Path", result.ActiveDocumentProperties);
-            ReadProperty(activeDocument, "DocumentType", result.ActiveDocumentProperties);
-            ReadProperty(activeDocument, "Type", result.ActiveDocumentProperties);
-            Console.WriteLine("Active document found: " + result.ActiveDocumentType);
-        }
-
-        break;
     }
-}
-catch (Exception ex)
-{
-    result.Success = false;
-    result.FatalError = DescribeException(ex);
-    Console.WriteLine(ex);
-}
-finally
-{
-    result.FinishedAt = DateTimeOffset.Now;
-    if (!string.IsNullOrWhiteSpace(jsonLogPath))
-    {
-        var directory = Path.GetDirectoryName(jsonLogPath);
-        if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
-        File.WriteAllText(jsonLogPath, JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
-    }
+
+    return null;
 }
 
-return result.Success ? 0 : 1;
-
-static void TryOpenModel(object app, string modelPath, SmokeResult result)
+static object? OpenDocument(object app, string modelPath, SmokeResult result)
 {
-    Console.WriteLine("Trying to open model: " + modelPath);
+    Console.WriteLine("Opening model via Documents.Open(path, true, false): " + modelPath);
 
     var documents = GetProperty(app, "Documents");
-    if (documents is not null)
+    if (documents is null)
     {
-        Console.WriteLine("  Documents object found: " + documents.GetType().FullName);
-        TryOpenDocumentsObject(documents, modelPath, result);
-    }
-    else
-    {
+        result.OpenResult = "ERROR: Documents object not found";
         Console.WriteLine("  Documents object not found");
+        return null;
     }
 
-    TryOpenApplicationObject(app, modelPath, result);
+    try
+    {
+        var document = documents.GetType().InvokeMember(
+            "Open",
+            BindingFlags.InvokeMethod,
+            null,
+            documents,
+            new object[] { modelPath, true, false });
+
+        result.OpenResult = document is null ? "OK: null" : "OK: " + document.GetType().FullName;
+        Console.WriteLine("  Documents.Open result: " + result.OpenResult);
+        return document;
+    }
+    catch (Exception ex)
+    {
+        result.OpenResult = "ERROR: " + DescribeException(ex);
+        Console.WriteLine("  Documents.Open failed: " + DescribeException(ex));
+        return null;
+    }
 }
 
-static void TryOpenDocumentsObject(object documents, string modelPath, SmokeResult result)
+static void ReadDocumentInfo(object document, Dictionary<string, string?> output)
 {
-    var methodNames = new[] { "Open", "OpenDocument", "Add", "OpenByFileName" };
-    foreach (var methodName in methodNames)
-    {
-        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath);
-        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, true);
-        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, false);
-        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, true, false);
-        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, false, false);
-        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, true, true);
-        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, false, true);
-        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, 0);
-        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, 1);
-        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, 0, true);
-        InvokeAndLog(documents, "Documents." + methodName, methodName, result.OpenAttempts, modelPath, 1, true);
-    }
-}
-
-static void TryOpenApplicationObject(object app, string modelPath, SmokeResult result)
-{
-    var methodNames = new[] { "OpenDocument", "DocumentOpen", "Open", "OpenDoc", "ksOpenDocument" };
-    foreach (var methodName in methodNames)
-    {
-        InvokeAndLog(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath);
-        InvokeAndLog(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, true);
-        InvokeAndLog(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, false);
-        InvokeAndLog(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, true, false);
-        InvokeAndLog(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, false, false);
-        InvokeAndLog(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, 0);
-        InvokeAndLog(app, "Application." + methodName, methodName, result.OpenAttempts, modelPath, 1);
-    }
+    ReadProperty(document, "Name", output);
+    ReadProperty(document, "FileName", output);
+    ReadProperty(document, "Path", output);
+    ReadProperty(document, "DocumentType", output);
+    ReadProperty(document, "Type", output);
 }
 
 static string? GetArgValue(string[] args, string name)
@@ -297,22 +293,6 @@ static void SetProperty(object target, string propertyName, object value, Dictio
     }
 }
 
-static void InvokeAndLog(object target, string label, string actualMethodName, Dictionary<string, string?> output, params object[] args)
-{
-    var key = label + "(" + args.Length + "):[" + string.Join(",", args.Select(a => a?.GetType().Name ?? "null")) + "]";
-    try
-    {
-        var value = target.GetType().InvokeMember(actualMethodName, BindingFlags.InvokeMethod, null, target, args.Length == 0 ? null : args);
-        output[key] = value?.ToString() ?? "OK";
-        Console.WriteLine($"  method {key}: {output[key]}");
-    }
-    catch (Exception ex)
-    {
-        output[key] = "ERROR: " + DescribeException(ex);
-        Console.WriteLine($"  method {key}: ERROR: {DescribeException(ex)}");
-    }
-}
-
 static void ReadProperty(object target, string propertyName, Dictionary<string, string?> output)
 {
     try
@@ -383,10 +363,9 @@ sealed class SmokeResult
     public string? ApplicationType { get; set; }
     public Dictionary<string, string?> ApplicationProperties { get; } = new();
     public Dictionary<string, string?> SetPropertyResults { get; } = new();
-    public Dictionary<string, string?> MethodResults { get; } = new();
-    public Dictionary<string, string?> OpenAttempts { get; } = new();
     public bool ActiveDocumentFound { get; set; }
     public string? ActiveDocumentType { get; set; }
+    public string? OpenResult { get; set; }
     public Dictionary<string, string?> ActiveDocumentProperties { get; } = new();
     public Dictionary<string, string> ActiveObjectErrors { get; } = new();
     public Dictionary<string, string> CreateObjectErrors { get; } = new();
