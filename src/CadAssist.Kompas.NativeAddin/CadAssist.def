@@ -1,3 +1,0 @@
-LIBRARY CadAssist.Kompas.NativeAddin
-EXPORTS
-    CadAssistInitialize

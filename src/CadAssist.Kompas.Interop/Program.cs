@@ -1,16 +1,12 @@
-using System;
-using System.Collections.Generic;
+using CadAssist.Kompas.Interop;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using System.Threading;
 using System.Windows;
-using CadAssist.Kompas.Interop;
 
 var result = new SmokeResult
 {
