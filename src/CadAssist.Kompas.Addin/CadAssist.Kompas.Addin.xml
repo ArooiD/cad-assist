@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<kompasLibrary>
+  <application title="CAD Assist">
+    <commands>
+      <appCommand id="1" title="Задачи CAD Assist" />
+    </commands>
+  </application>
+</kompasLibrary>
