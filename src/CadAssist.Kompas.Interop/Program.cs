@@ -145,6 +145,9 @@ static string? TryGetActiveKompasDocumentPath()
         var activeDocument = GetProperty(app, "ActiveDocument") ?? InvokeMethod(app, "ActiveDocument");
         if (activeDocument is null) return null;
 
+        var pathName = ReadStringProperty(activeDocument, "PathName");
+        if (!string.IsNullOrWhiteSpace(pathName) && File.Exists(pathName)) return pathName;
+
         var fullPath = ReadStringProperty(activeDocument, "FileName");
         if (!string.IsNullOrWhiteSpace(fullPath) && File.Exists(fullPath)) return fullPath;
 
@@ -309,6 +312,7 @@ static void ReadDocumentInfo(object document, Dictionary<string, string?> output
 {
     ReadProperty(document, "Name", output);
     ReadProperty(document, "FileName", output);
+    ReadProperty(document, "PathName", output);
     ReadProperty(document, "Path", output);
     ReadProperty(document, "DocumentType", output);
     ReadProperty(document, "Type", output);
