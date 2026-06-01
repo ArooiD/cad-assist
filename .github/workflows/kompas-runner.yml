@@ -24,6 +24,7 @@ jobs:
       CAD_ASSIST_TEST_TASK: 'Проверить отверстия под крепёж'
       DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION: 'true'
       CAD_ASSIST_APP_DIR: 'C:\cad-assist-test\app'
+      CAD_ASSIST_ADDIN_DIR: 'C:\cad-assist-test\addin'
 
     steps:
       - name: Checkout
@@ -45,6 +46,18 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$env:CAD_ASSIST_APP_DIR" | Out-Null
           dotnet publish src/CadAssist.Kompas.Interop/CadAssist.Kompas.Interop.csproj -c Release -o "$env:CAD_ASSIST_APP_DIR" --no-restore
           Write-Host "CAD Assist app published to $env:CAD_ASSIST_APP_DIR"
+
+      - name: Build KOMPAS addin DLL
+        shell: powershell
+        run: |
+          chcp 65001 | Out-Null
+          [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+          $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+          New-Item -ItemType Directory -Force -Path "$env:CAD_ASSIST_ADDIN_DIR" | Out-Null
+          dotnet restore src/CadAssist.Kompas.Addin/CadAssist.Kompas.Addin.csproj
+          dotnet build src/CadAssist.Kompas.Addin/CadAssist.Kompas.Addin.csproj -c Release --no-restore
+          Copy-Item src/CadAssist.Kompas.Addin/bin/Release/net48/CadAssist.Kompas.Addin.dll "$env:CAD_ASSIST_ADDIN_DIR\CadAssist.Kompas.Addin.dll" -Force
+          Write-Host "CAD Assist addin DLL published to $env:CAD_ASSIST_ADDIN_DIR"
 
       - name: Run KOMPAS integration smoke test
         shell: powershell
