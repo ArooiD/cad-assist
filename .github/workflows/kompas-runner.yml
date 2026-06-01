@@ -1,0 +1,47 @@
+name: KOMPAS smoke test
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  kompas-smoke:
+    name: Build and run on KOMPAS workstation
+    runs-on: [self-hosted, Windows, X64, kompas]
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build KOMPAS interop project
+        shell: pwsh
+        run: |
+          dotnet restore src/CadAssist.Kompas.Interop/CadAssist.Kompas.Interop.csproj
+          dotnet build src/CadAssist.Kompas.Interop/CadAssist.Kompas.Interop.csproj -c Release --no-restore
+
+      - name: Run KOMPAS integration smoke test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          dotnet run --project src/CadAssist.Kompas.Interop/CadAssist.Kompas.Interop.csproj -c Release -- --smoke-test --json-log artifacts/kompas-smoke.json *> artifacts/kompas-smoke.log
+          $exitCode = $LASTEXITCODE
+          Get-Content artifacts/kompas-smoke.log
+          if ($exitCode -ne 0) {
+            Write-Host "KOMPAS smoke test failed with exit code $exitCode"
+            exit $exitCode
+          }
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kompas-smoke-diagnostics
+          path: artifacts/
