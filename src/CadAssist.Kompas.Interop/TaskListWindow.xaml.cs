@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Windows;
@@ -111,7 +112,7 @@ public partial class TaskListWindow : Window
             }
 
             OpenModelInKompas(fullPath);
-            StatusText.Text = $"Открыта модель: {fullPath}";
+            StatusText.Text = $"Открыта модель в текущем экземпляре КОМПАС: {fullPath}";
         }
         catch (Exception ex)
         {
@@ -257,12 +258,14 @@ public partial class TaskListWindow : Window
 
     private static void OpenModelInKompas(string modelPath)
     {
-        var app = CreateKompasApplication();
+        var app = GetRunningKompasApplication()
+            ?? throw new InvalidOperationException("Не найден запущенный экземпляр КОМПАС. Откройте КОМПАС и проект, затем повторите попытку.");
+
         SetComProperty(app, "Visible", true);
         SetComProperty(app, "HideMessage", 1);
 
         var documents = GetComProperty(app, "Documents")
-            ?? throw new InvalidOperationException("Не удалось получить объект Documents у КОМПАС.");
+            ?? throw new InvalidOperationException("Не удалось получить объект Documents у текущего экземпляра КОМПАС.");
 
         documents.GetType().InvokeMember(
             "Open",
@@ -272,7 +275,7 @@ public partial class TaskListWindow : Window
             new object[] { modelPath, true, false });
     }
 
-    private static object CreateKompasApplication()
+    private static object? GetRunningKompasApplication()
     {
         var progIds = new[]
         {
@@ -284,13 +287,9 @@ public partial class TaskListWindow : Window
 
         foreach (var progId in progIds)
         {
-            var type = Type.GetTypeFromProgID(progId);
-            if (type is null) continue;
-
             try
             {
-                return Activator.CreateInstance(type)
-                    ?? throw new InvalidOperationException("COM object is null: " + progId);
+                return GetActiveComObject(progId);
             }
             catch
             {
@@ -298,7 +297,33 @@ public partial class TaskListWindow : Window
             }
         }
 
-        throw new InvalidOperationException("Не удалось создать объект КОМПАС.Application через COM.");
+        return null;
+    }
+
+    private static object GetActiveComObject(string progId)
+    {
+        var clsid = Type.GetTypeFromProgID(progId)?.GUID
+            ?? throw new InvalidOperationException($"ProgID is not registered: {progId}");
+
+        Ole32.GetRunningObjectTable(0, out var rot).ThrowIfFailed();
+        Ole32.CreateBindCtx(0, out var bindCtx).ThrowIfFailed();
+        rot.EnumRunning(out var enumMoniker);
+        var monikers = new IMoniker[1];
+
+        while (enumMoniker.Next(1, monikers, IntPtr.Zero) == 0)
+        {
+            monikers[0].GetDisplayName(bindCtx, null, out var displayName);
+            if (!displayName.Contains(progId, StringComparison.OrdinalIgnoreCase) &&
+                !displayName.Contains(clsid.ToString("B"), StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            rot.GetObject(monikers[0], out var runningObject);
+            return runningObject;
+        }
+
+        throw new InvalidOperationException($"Running COM object not found in ROT: {progId}");
     }
 
     private static object? GetComProperty(object target, string propertyName)
@@ -339,6 +364,23 @@ public partial class TaskListWindow : Window
         }
 
         return current.Message;
+    }
+
+    internal static class Ole32
+    {
+        [DllImport("ole32.dll")]
+        public static extern int GetRunningObjectTable(int reserved, out IRunningObjectTable runningObjectTable);
+
+        [DllImport("ole32.dll")]
+        public static extern int CreateBindCtx(int reserved, out IBindCtx bindCtx);
+
+        public static void ThrowIfFailed(this int hresult)
+        {
+            if (hresult < 0)
+            {
+                Marshal.ThrowExceptionForHR(hresult);
+            }
+        }
     }
 
     private static JsonSerializerOptions JsonOptions() => new()
