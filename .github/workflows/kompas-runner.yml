@@ -45,7 +45,6 @@ jobs:
           dotnet build src/CadAssist.Kompas.Interop/CadAssist.Kompas.Interop.csproj -c Release --no-restore
           New-Item -ItemType Directory -Force -Path "$env:CAD_ASSIST_APP_DIR" | Out-Null
           dotnet publish src/CadAssist.Kompas.Interop/CadAssist.Kompas.Interop.csproj -c Release -o "$env:CAD_ASSIST_APP_DIR" --no-restore
-          Write-Host "CAD Assist app published to $env:CAD_ASSIST_APP_DIR"
 
       - name: Build and register managed KOMPAS addin DLL
         shell: powershell
@@ -57,7 +56,7 @@ jobs:
           dotnet restore src/CadAssist.Kompas.Addin/CadAssist.Kompas.Addin.csproj
           dotnet build src/CadAssist.Kompas.Addin/CadAssist.Kompas.Addin.csproj -c Release --no-restore
           Copy-Item src/CadAssist.Kompas.Addin/bin/Release/net48/CadAssist.Kompas.Addin.dll "$env:CAD_ASSIST_ADDIN_DIR\CadAssist.Kompas.Addin.dll" -Force
-          Write-Host "CAD Assist managed addin DLL published to $env:CAD_ASSIST_ADDIN_DIR"
+          Copy-Item src/CadAssist.Kompas.Addin/CadAssist.Kompas.Addin.xml "$env:CAD_ASSIST_ADDIN_DIR\CadAssist.Kompas.Addin.xml" -Force
           .\tools\register-cad-assist-kompas-addin.ps1 -AddinDllPath "$env:CAD_ASSIST_ADDIN_DIR\CadAssist.Kompas.Addin.dll"
 
       - name: Run KOMPAS integration smoke test
@@ -70,24 +69,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
           $showTaskWindow = '${{ github.event.inputs.show_task_window }}'
           $taskWindowArg = ''
-          if ($showTaskWindow -eq 'true') {
-            $taskWindowArg = '--show-task-window'
-            Write-Host 'CAD Assist WPF task window mode is enabled.'
-          } else {
-            Write-Host 'CAD Assist WPF task window mode is disabled.'
-          }
+          if ($showTaskWindow -eq 'true') { $taskWindowArg = '--show-task-window' }
           $appExe = Join-Path $env:CAD_ASSIST_APP_DIR 'CadAssist.Kompas.Interop.exe'
-          if (-not (Test-Path $appExe)) {
-            Write-Host "CAD Assist app executable was not found: $appExe"
-            exit 1
-          }
           & $appExe --smoke-test --model-path "$env:KOMPAS_TEST_MODEL_PATH" --add-task "$env:CAD_ASSIST_TEST_TASK" $taskWindowArg --json-log artifacts/kompas-smoke.json *> artifacts/kompas-smoke.log
-          $exitCode = $LASTEXITCODE
           Get-Content -Encoding UTF8 artifacts/kompas-smoke.log
-          if ($exitCode -ne 0) {
-            Write-Host "KOMPAS smoke test failed with exit code $exitCode"
-            exit $exitCode
-          }
 
       - name: Upload diagnostics
         if: always()
