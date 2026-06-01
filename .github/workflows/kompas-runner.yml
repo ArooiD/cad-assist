@@ -23,6 +23,7 @@ jobs:
       KOMPAS_TEST_MODEL_PATH: 'C:\cad-assist-test\test.m3d'
       CAD_ASSIST_TEST_TASK: 'Проверить отверстия под крепёж'
       DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION: 'true'
+      CAD_ASSIST_APP_DIR: 'C:\cad-assist-test\app'
 
     steps:
       - name: Checkout
@@ -41,6 +42,9 @@ jobs:
           $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
           dotnet restore src/CadAssist.Kompas.Interop/CadAssist.Kompas.Interop.csproj
           dotnet build src/CadAssist.Kompas.Interop/CadAssist.Kompas.Interop.csproj -c Release --no-restore
+          New-Item -ItemType Directory -Force -Path "$env:CAD_ASSIST_APP_DIR" | Out-Null
+          dotnet publish src/CadAssist.Kompas.Interop/CadAssist.Kompas.Interop.csproj -c Release -o "$env:CAD_ASSIST_APP_DIR" --no-restore
+          Write-Host "CAD Assist app published to $env:CAD_ASSIST_APP_DIR"
 
       - name: Run KOMPAS integration smoke test
         shell: powershell
@@ -58,7 +62,12 @@ jobs:
           } else {
             Write-Host 'CAD Assist WPF task window mode is disabled.'
           }
-          dotnet run --project src/CadAssist.Kompas.Interop/CadAssist.Kompas.Interop.csproj -c Release -- --smoke-test --model-path "$env:KOMPAS_TEST_MODEL_PATH" --add-task "$env:CAD_ASSIST_TEST_TASK" $taskWindowArg --json-log artifacts/kompas-smoke.json *> artifacts/kompas-smoke.log
+          $appExe = Join-Path $env:CAD_ASSIST_APP_DIR 'CadAssist.Kompas.Interop.exe'
+          if (-not (Test-Path $appExe)) {
+            Write-Host "CAD Assist app executable was not found: $appExe"
+            exit 1
+          }
+          & $appExe --smoke-test --model-path "$env:KOMPAS_TEST_MODEL_PATH" --add-task "$env:CAD_ASSIST_TEST_TASK" $taskWindowArg --json-log artifacts/kompas-smoke.json *> artifacts/kompas-smoke.log
           $exitCode = $LASTEXITCODE
           Get-Content -Encoding UTF8 artifacts/kompas-smoke.log
           if ($exitCode -ne 0) {
